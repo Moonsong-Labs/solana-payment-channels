@@ -1,6 +1,6 @@
 # payment-channels
 
-> Unidirectional payment channels on Solana: escrow a deposit, authorize cumulative spend with off-chain Ed25519 vouchers, then settle and distribute on-chain. A small [Pinocchio](https://github.com/anza-xyz/pinocchio) program over SPL Token / Token-2022.
+> Payment channels make agentic payments practical by escrowing a spending ceiling on-chain and settling actual usage from signed vouchers; this program backs [MPP `session`](https://paymentauth.org/draft-solana-session-00.html) for streaming or repeated payments and [x402 `upto`](https://github.com/x402-foundation/x402/blob/main/specs/schemes/upto/scheme_upto_svm.md) for one metered request.
 
 **Status — live on mainnet:** [`CHNLxYvVA28MJP9PrFuDXccuoGXAx7jBacfLEkahyGsX`](https://explorer.solana.com/address/CHNLxYvVA28MJP9PrFuDXccuoGXAx7jBacfLEkahyGsX)
 
@@ -12,10 +12,11 @@ One on-chain `open` and one `settle` replace a transaction per payment. The paye
 
 ```mermaid
 flowchart LR
-  A["open<br/>(escrow a deposit)"] --> B["off-chain vouchers<br/>(cumulative spend)"]
-  B --> C["settle<br/>(advance settled amount)"]
-  C --> D["distribute<br/>(payee + splits, refund payer)"]
-  D --> E["reclaim<br/>(recover channel rent)"]
+  A["open<br/>(create PDA + escrow deposit)"] --> B["off-chain vouchers<br/>(cumulative spend)"]
+  B --> C["Ed25519 precompile + settle<br/>(advance settled watermark)"]
+  C --> D["settle_and_seal<br/>(lock final watermark)"]
+  D --> E["distribute<br/>(payouts + refund + close escrow)"]
+  E --> F["reclaim, when needed<br/>(recover channel-PDA rent)"]
 ```
 
 ```mermaid
@@ -30,7 +31,28 @@ stateDiagram-v2
   Sealed --> [*]: distribute (fast path, window already elapsed)
 ```
 
-Vouchers are signed off-chain (Ed25519) and carry a **cumulative** amount, so a newer voucher supersedes older ones and the program never settles more than the deposit. `distribute` / `withdraw_payer` move the settled funds out and refund the unspent remainder the moment the channel is sealed — no payout ever waits. The channel account itself is then fully deallocated (directly, or by a later `reclaim` once the epoch window elapses), returning 100% of its rent: a closed channel leaves nothing on chain.
+Vouchers are signed off-chain (Ed25519) and carry a **cumulative** amount, so a newer voucher supersedes older ones and the program never settles more than the deposit. `distribute` pays the settled amount; once the channel is sealed, `distribute` or `withdraw_payer` can refund the unspent remainder immediately—no token movement waits on the epoch window. The channel account itself is then fully deallocated (directly, or by a later `reclaim` once the window elapses), returning 100% of its rent: a closed channel leaves nothing on chain.
+
+## Architecture
+
+- The [Pinocchio](https://github.com/anza-xyz/pinocchio) program stores each channel in a 256-byte PDA derived from `b"channel"`, `payer`, `payee`, `mint`, `authorized_signer`, `salt`, and `open_slot`. Its escrow is the canonical ATA owned by that PDA.
+- `open_slot` makes every channel incarnation land at a new address. `open` accepts only a current-or-recent slot (`OPEN_SLOT_WINDOW = 1,500`), and the program keeps the PDA allocated until that window has elapsed. An old voucher therefore cannot target a later incarnation.
+- Channel fields—not raw token or lamport balances—are authoritative. Third-party token prefunds are uncredited and swept to treasury by the terminal `distribute`; surplus PDA lamports return to `rent_payer` when the account is deallocated.
+- `open` stores only the SHA-256 commitment to the canonical distribution preimage. Any permissionless `distribute` caller supplies the preimage and recipient ATAs.
+- `rent_payer` can differ from the token payer, allowing an operator to fund SOL rent for a stablecoin-only client and recover that SOL at close.
+
+## Voucher wire format
+
+The Ed25519-signed message is exactly 50 bytes:
+
+| Offset | Size | Field | Encoding |
+| --- | ---: | --- | --- |
+| `0..2` | 2 | `magic` | `[0x56, 0x01]` (`'V'`, format version 1) |
+| `2..34` | 32 | `channel_id` | Channel PDA bytes |
+| `34..42` | 8 | `cumulative_amount` | `u64`, little-endian |
+| `42..50` | 8 | `expires_at` | Unix timestamp as `i64`, little-endian; `0` disables expiry |
+
+`settle` carries no voucher copy in its own instruction data. The transaction places a canonical single-signature Ed25519 precompile instruction immediately before `settle` (or before voucher-bearing `settle_and_seal`); the program reads the verified 50-byte message through the Instructions sysvar. See the [state-machine voucher contract](docs/001-payment-channel-state-machine.md#voucher) for replay, expiry, and signer checks.
 
 ## Used by pay.sh
 
@@ -46,12 +68,12 @@ See **[Payment channels](https://pay.sh/docs/building-with-pay/payment-channels/
 | Instruction | Role |
 | --- | --- |
 | `open` | Create the channel PDA and escrow the deposit. |
-| `settle` | Advance the on-chain settled amount from a signed voucher. |
+| `settle` | Advance the on-chain settled amount from the preceding Ed25519-verified voucher. |
 | `settle_and_seal` | Settle a final voucher and seal in one step (cooperative). |
 | `top_up` | Add funds to an open channel. |
 | `request_close` | Payer-initiated forced close — starts the grace period. |
 | `seal` | Seal a forced-closing channel once the grace period elapses. |
-| `distribute` | Pay the payee and any split recipients; refund the payer; close the escrow. |
+| `distribute` | Pay cumulative recipient/payee shares while open; when sealed, refund the payer, sweep residuals, and close the escrow. |
 | `withdraw_payer` | Payer recovers the unspent remainder. |
 | `reclaim` | Deallocate a distributed channel and recover its rent (batchable). |
 
