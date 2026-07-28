@@ -98,3 +98,10 @@ Cluster builds (`just build-mainnet-beta`, `just build-devnet`, …) require tha
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Future work: batch voucher settlement
+
+A proposed `settleBatch` instruction would let one Ed25519 voucher authorize cumulative targets for many channels that share an `authorized_signer`.
+The signed message would commit to the ordered channel-account list and carry one amount per channel, avoiding repeated signatures and channel addresses.
+A version-0 transaction with an address lookup table could then settle roughly 59 channels instead of about five, while preserving per-channel caps and replay checks.
+This is not implemented and requires a new voucher wire format; see [ADR-004](docs/004-batch-voucher-settlement.md) for the adversarial analysis and trade-offs.
