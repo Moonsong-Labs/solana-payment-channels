@@ -78,7 +78,7 @@ Multi-byte fields are stored as align-1 `[u8; N]` byte arrays in the actual stru
 
 ### Accounting authority
 
-`Channel` state — `deposit`, `settlement.settled`, `settlement.payout_watermark`, `payer_withdrawn_at` — is authoritative for pending settlement amounts. The escrow ATA balance and the channel PDA's lamports can exceed those values: third parties can transfer tokens to the escrow ATA address (either before `open` via a precreated ATA or directly afterward), and lamports can be transferred to the PDA address before `open`. The program accepts these states (`open` is prefund-tolerant) but does not record them in `Channel`. Surplus tokens are swept to treasury at `seal` via `distribute`'s `escrow_at_entry − scheduled_outflow` residual; surplus PDA lamports flow to `rent_payer` at close (full deallocation drains every lamport). Off-chain consumers MUST derive pending value from channel state, never from raw account balances.
+`Channel` state — `deposit`, `settlement.settled`, `settlement.payout_watermark`, `payer_withdrawn_at` — is authoritative for pending settlement amounts. The escrow ATA balance and the channel PDA's lamports can exceed those values: third parties can transfer tokens to the escrow ATA address (either before `open` via a precreated ATA or directly afterward), and lamports can be transferred to the PDA address before `open`. The program accepts these states (`open` is prefund-tolerant) but does not record them in `Channel`. The terminal `distribute` from `SEALED` sweeps surplus tokens to treasury through its `escrow_at_entry − scheduled_outflow` residual; surplus PDA lamports flow to `rent_payer` at full deallocation. Off-chain consumers MUST derive pending value from channel state, never from raw account balances.
 
 ### PDA derivation
 
@@ -143,13 +143,25 @@ Total 50 bytes (offsets `0..2`, `2..34`, `34..42`, `42..50`), stored align-1 (`[
 
 **Replay protection.** `channel_id` (a PDA, hence program- and seed-specific — and, because `open_slot` is a seed, incarnation-specific) + strictly monotonic `cumulative_amount > settled` + optional `expires_at`. No explicit nonce and no epoch field. Binding the address is what allows terminal `distribute` to fully deallocate the PDA: `open` validates `open_slot <= clock.slot && clock.slot - open_slot <= OPEN_SLOT_WINDOW` (future slots strictly rejected) and terminal closure requires `clock.slot > open_slot + OPEN_SLOT_WINDOW`, so the channel address never repeats — a reincarnation of the same participant tuple necessarily carries a new `open_slot` and lands at a new address, and an old voucher fails as wrong-address (`VoucherChannelMismatch`) or hits a nonexistent account. `OPEN_SLOT_WINDOW` is consensus-critical and may only ever be decreased across program versions. The strict watermark rule applies to `settle` and to `settleAndSeal` when a voucher is supplied. A supplied `settleAndSeal` voucher with `cumulative_amount <= settled` is invalid and MUST cause the `settleAndSeal` instruction to reject; if no additional settlement is needed, call `settleAndSeal` without a voucher to seal the current `settled` watermark.
 
-**Cluster scope.** Vouchers are not bound to a cluster. A voucher could in principle be replayed against an identically-addressed channel on another cluster — which requires the same program, mint, salt, payer, authorized_signer, and open_slot at identical addresses on two clusters plus an operator accepting it cross-cluster. This residual replay is an accepted operational risk (no parallel clusters in use; SVM has no EVM-style cross-chain vector), mitigated off-chain by pinning each server and channel to one cluster — see ADR-002, Server Implementation Requirements.
+**Cluster scope.** Vouchers are not bound to a cluster. A voucher could in principle be replayed against an identically-addressed channel on another cluster — which requires the same program, payer, payee, mint, authorized signer, salt, and `open_slot` at identical addresses on two clusters plus an operator accepting it cross-cluster. This residual replay is an accepted operational risk (no parallel clusters in use; SVM has no EVM-style cross-chain vector), mitigated off-chain by pinning each server and channel to one cluster — see ADR-002, Server Implementation Requirements.
 
 ### FSM
 
-![Channel state machine](./fsm.png)
+```mermaid
+stateDiagram-v2
+    [*] --> OPEN: open
+    OPEN --> OPEN: settle / topUp / distribute
+    OPEN --> SEALED: settleAndSeal
+    OPEN --> CLOSING: requestClose
+    CLOSING --> SEALED: settleAndSeal (before deadline)
+    CLOSING --> SEALED: seal (at/after deadline)
+    SEALED --> SEALED: withdrawPayer
+    SEALED --> DISTRIBUTED: distribute (epoch window active)
+    SEALED --> [*]: distribute (epoch window elapsed)
+    DISTRIBUTED --> [*]: reclaim (epoch window elapsed)
+```
 
-`DISTRIBUTED` is a real `ChannelStatus` value (3): fully drained (every token leg paid, escrow ATA closed), inert to every instruction except `reclaim`, holding only its own PDA rent. `reclaim` (or `distribute`'s fast path, when the window has already elapsed) deallocates the account entirely — it ceases to exist and the address becomes reopenable.
+`DISTRIBUTED` is a real `ChannelStatus` value (3): fully drained (every token leg paid, escrow ATA closed), inert to every instruction except `reclaim`, holding only its own PDA rent. `reclaim` (or `distribute`'s fast path, when the window has already elapsed) deallocates the account entirely. The old address is never reused: its fixed `open_slot` seed is already too stale to pass a future `open`.
 
 ## Transition Guards
 
@@ -163,7 +175,7 @@ Total 50 bytes (offsets `0..2`, `2..34`, `34..42`, `42..50`), stored align-1 (`[
 | `settleAndSeal` | `CLOSING → SEALED` | payee signer equals channel `payee`; `now < closureStartedAt + GRACE`; voucher optional (if present: preceding Ed25519 ix, signer equals `authorized_signer`, voucher fresh†, `settled < voucher.cumulative ≤ deposit`) |
 | `seal` | `CLOSING → SEALED` | channel is `CLOSING`; `now ≥ closureStartedAt + GRACE` |
 | `distribute` | `OPEN → OPEN` | channel is `OPEN`; parsed preimage hash matches `distribution_hash`; recipient account tail length/order matches preimage; `settled > payout_watermark`; pays cumulative floor deltas and advances `payout_watermark` to `settled` |
-| `distribute` | `SEALED → DISTRIBUTED` | channel is `SEALED`; parsed preimage hash matches `distribution_hash`; recipient account tail length/order matches preimage; pays cumulative floor deltas for any unaccounted settled watermark, performs any pending payer refund, sweeps final irreducible residual dust to treasury, and closes escrow — none of it slot-gated; then deallocates the PDA in place if `clock.slot > open_slot + OPEN_SLOT_WINDOW` already holds, else sets `DISTRIBUTED` |
+| `distribute` | `SEALED → DISTRIBUTED/gone` | channel is `SEALED`; parsed preimage hash matches `distribution_hash`; recipient account tail length/order matches preimage; pays cumulative floor deltas for any unaccounted settled watermark, performs any pending payer refund, sweeps final irreducible residual dust to treasury, and closes escrow — none of it slot-gated; then deallocates the PDA in place if `clock.slot > open_slot + OPEN_SLOT_WINDOW` already holds, else sets `DISTRIBUTED` |
 | `reclaim` | `DISTRIBUTED → gone` | permissionless; channel is `DISTRIBUTED`; `rent_payer` account equals `Channel.rent_payer`; `clock.slot > open_slot + OPEN_SLOT_WINDOW`; drains all lamports to `rent_payer` and deallocates the PDA |
 | `withdrawPayer` | `SEALED → SEALED` | payer signer equals channel `payer`; channel is `SEALED`; `payerWithdrawnAt == 0`; mint/escrow/refund ATAs match channel |
 
@@ -192,7 +204,8 @@ count (u32 LE) || [ recipient (32 bytes) || bps (u16 LE) ] × count
 - The payee receives the implicit remainder delta `floor(settled * (10000 - Σ bps) / 10000) - floor(payout_watermark * (10000 - Σ bps) / 10000)`.
 - During `OPEN`, residual dust from floor math remains in escrow while `payout_watermark` advances to `settled` as an accounted watermark. Later distributions compute cumulative floor deltas from that watermark, so previously residual value remains claimable when a share's cumulative entitlement crosses the next whole token.
 - During `SEALED`, the final cumulative floor delta runs once, then final irreducible residual dust is swept to the treasury ATA before the escrow ATA is closed.
-- Nonzero beneficiary shares redirect to treasury only when the canonical Token-2022 ATA has an unsupported account extension. Malformed extension TLV/data, uninitialized accounts, wrong mint/owner/address, invalid token program, mint failures, escrow failures, and treasury failures hard-fail. Zero-amount shares validate only the canonical ATA address.
+- For any nonzero recipient or payee payout—and for a nonzero payer refund in terminal `distribute`—an unusable canonical ATA redirects that amount to treasury and emits `PayoutRedirected`. Redirect reasons are: unsupported Token-2022 extension, closed/unreadable base account, frozen or otherwise uninitialized account, and reassigned token-account authority. The beneficiary permanently forfeits the redirected amount because `payout_watermark` still advances (or the sealed channel closes).
+- A wrong non-canonical ATA address and a malformed Token-2022 TLV trailer hard-fail instead of redirecting. Zero-amount shares validate only the canonical ATA address and perform no transfer.
 - Default `MAX_DISTRIBUTION_RECIPIENTS = 32`. Program-level constant; tunable per deployment.
 
 ## Token Program Support

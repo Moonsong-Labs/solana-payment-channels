@@ -35,12 +35,13 @@ Actors: **C** = client (payer). **S** = server (merchant).
 - **Minimum-deposit constraint:** `POST /channel/open` requires both `payload.depositAmount` and the decoded `open` instruction's `deposit` to be at least `challenge.methodDetails.minimumDeposit`. Enforced at the HTTP layer, not on-chain.
 - **Grace-period constraint:** New-channel `POST /channel/open` requires `payload.gracePeriodSeconds == challenge.methodDetails.gracePeriodSeconds`. Before signing or submitting the transaction, the server MUST decode the `open` instruction data and reject unless encoded `grace_period` equals the same positive `u32`. The on-chain program rejects zero grace periods, but merchant-specific close-window policy is enforced at the HTTP layer. It is recommended to set the grace period to a realistic business-appropriate minimum, e.g. 15 minutes to allow for a final settlement, if client requests a close.
 - **Server-submitted ixs:** `settle`, `settleAndSeal`, and `distribute` are submitted directly by the server. In the cooperative path, the server triggers `distribute` (often bundled with `settleAndSeal`) and may run mid-session distributes from `OPEN`.
+- **Voucher-bearing transaction shape:** A canonical single-signature Ed25519 precompile instruction must sit immediately before `settle` or before a voucher-bearing `settleAndSeal`. The payment-channel instruction itself carries no voucher bytes; it reads the precompile-verified 50-byte message through the Instructions sysvar.
 - **PDA payees:** `open` allows `payee` to be either an on-curve address or a program-derived address (PDA) beneficiary. A direct `settleAndSeal` transaction requires a signer equal to `Channel.payee`; PDA payees can use that cooperative-close path only through CPI from the owning program with signer seeds. Permissionless `settle`, `seal`, and `distribute` remain available without a payee signature.
 - **Escape routes are direct-to-chain:** The client submits these directly to Solana RPC:
   - `requestClose`: Payer-signed. Callable in `OPEN`. Starts the grace period.
   - `withdraw_payer`: Payer-signed. Callable in `SEALED`. Refunds `deposit - settled`.
   - `seal`: Permissionless. Post-grace. Transitions `CLOSING -> SEALED`.
-  - `distribute`: Permissionless in `OPEN` and `SEALED`. Caller supplies splits preimage; program verifies hash against `Channel.distribution_hash`. From `OPEN`, it pays cumulative floor deltas between `payout_watermark` and `settled` for each recipient and the payee's implicit remainder share, then advances `payout_watermark` to `settled`. Zero-delta shares are skipped, and floor dust remains in escrow so later cumulative deltas can still claim it. From `SEALED`, it runs the final cumulative floor deltas, refunds `deposit - settled` to the payer (if `payerWithdrawnAt == 0`), sweeps final irreducible residual dust to treasury, and closes the escrow ATA — immediately; no token movement is slot-gated. The channel PDA is deallocated in place if `clock.slot > open_slot + OPEN_SLOT_WINDOW` has already passed, otherwise it is marked `DISTRIBUTED` and its rent is recovered later via the permissionless, batchable `reclaim` instruction (operators SHOULD run a periodic reclaim sweep). **SDK note:** distributions with 32 recipients require a version 0 transaction and an address lookup table indexing recipient ATAs; legacy transactions cannot fit the account-key budget.
+  - `distribute`: Permissionless in `OPEN` and `SEALED`. Caller supplies splits preimage; program verifies hash against `Channel.distribution_hash`. From `OPEN`, it pays cumulative floor deltas between `payout_watermark` and `settled` for each recipient and the payee's implicit remainder share, then advances `payout_watermark` to `settled`. Zero-delta shares are skipped, and floor dust remains in escrow so later cumulative deltas can still claim it. From `SEALED`, it runs the final cumulative floor deltas, refunds `deposit - settled` to the payer (if `payerWithdrawnAt == 0`), sweeps final irreducible residual dust to treasury, and closes the escrow ATA — immediately; no token movement is slot-gated. The channel PDA is deallocated in place if `clock.slot > open_slot + OPEN_SLOT_WINDOW` has already passed, otherwise it is marked `DISTRIBUTED` and its rent is recovered later via the permissionless, batchable `reclaim` instruction (operators SHOULD run a periodic reclaim sweep). A nonzero recipient/payee payout or payer refund is permanently redirected to treasury—with a `PayoutRedirected` event—when its canonical ATA is closed/unreadable, frozen/uninitialized, authority-reassigned, or carries an unsupported Token-2022 extension. Wrong ATA addresses and malformed Token-2022 TLV trailers hard-fail. **SDK note:** distributions with 32 recipients require a version 0 transaction and an address lookup table indexing recipient ATAs; legacy transactions cannot fit the account-key budget.
 - **Escape-route self-sufficiency:** Clients persist the 402 challenge and `channelId` to independently invoke escape routes.
 - **Distribution commitment:** The PDA stores a 32-byte SHA-256 digest of the splits preimage. Splits are passed to `open` and hashed on-chain, making them publicly recoverable from instruction data. `distribute` requires the caller to supply the preimage for hash verification.
 - **PDA-canonical bump:** The `open` instruction data does not carry a client-supplied bump byte; the on-chain program derives the canonical bump via `find_program_address` and validates the channel PDA address directly. Clients MUST NOT include a `bump` field in the `POST /channel/open` payload, and servers MUST reject envelopes containing the field with HTTP 400. Silently accepting and ignoring a wire `bump` would mask client-side derivation bugs whose wrong bump pairs with a correct PDA address — exactly the inconsistency the on-chain address check cannot catch. Implementations whose deserializers currently model `bump` as a required field MUST remove it.
@@ -74,7 +75,8 @@ Actors: **C** = client (payer). **S** = server (merchant).
     // Solana-session extensions (not in MPP core; documented in Extensions section):
     "distributionSplits": [
       { "recipient": "<pubkey base58>", "shareBps": <integer 1–10000> }
-      // 0..=MAX_SPLITS entries; every shareBps > 0; Σ shareBps ≤ 10000.
+      // 0..=MAX_DISTRIBUTION_RECIPIENTS entries; every shareBps > 0;
+      // Σ shareBps ≤ 10000.
       // The remainder `10000 − Σ shareBps` is the payee's implicit share.
       // Merchant's proposed splits; forwarded by the client as inputs to
       // `open` (program canonicalizes + hashes on-chain).
@@ -115,7 +117,8 @@ The on-chain program enforces only its local invariants — voucher expiry, cumu
 6. **Key all metering state by `channelId`, scoped to one cluster.** `acceptedCumulative` and the stored highest `SignedVoucher` MUST be keyed by the channel PDA (`channelId`), not by challenge id or HTTP session id. Multiple challenges that resume one channel share one cumulative ledger, so concurrent or cross-session reuse of one cumulative voucher cannot buy multiple responses. The program does not bind vouchers to a cluster, so operators MUST pin each server and channel to a single cluster + RPC, and MUST NOT share one metering ledger across clusters; a server SHOULD verify the resolved channel matches `challenge.methodDetails.network` before metering.
 7. **Authenticate resumed channels beyond decoding bytes.** When a challenge resumes an existing channel (`methodDetails.channelId`), the server MUST verify the decoded on-chain account is owned by the channel program and that its discriminator, version, status (`OPEN`), PDA derivation, mint (still allow-listed), `payee`, `authorized_signer`, and `distribution_hash` all match the active challenge/session before metering against it.
 8. **Gate PDA payees.** For PDA `payee` deployments, the server MUST either expose a tested CPI signer-seed `settleAndSeal` adapter or reject the channel before metered service begins. Permissionless `settle` only applies while the channel is `OPEN` and cannot apply a voucher after the payer starts `requestClose`, so a PDA payee with no working cooperative-close path can leave delivered service uncollectible.
-9. **Treat `Channel` state, not raw account balances, as authoritative.** The two addresses created during `open` are publicly derivable from the open payload — the **channel PDA** (`find_program_address([b"channel", payer, payee, mint, authorizedSigner, salt.to_le_bytes(), openSlot.to_le_bytes()], channelProgram)`) and the **escrow ATA** (`ATA(channelPda, mint, tokenProgram)`) — so a third party can prefund either before the server's `open` transaction lands. `open` is prefund-tolerant: both creates are idempotent, so a prefunded but still-uninitialized channel PDA (a system-owned, data-empty account that only holds lamports), or a pre-existing canonical escrow ATA, is accepted rather than reverting `open`. Reusing the full seed tuple of a *live* channel reverts `open` (the PDA holds an initialized `Channel`, so the signed `Allocate` cannot re-run over it) — resume that channel instead of re-opening it; "resume" only applies to live channels. Reopening a *fully closed* relationship means opening a fresh channel at a **new address**: `open_slot` is a PDA seed, so a new incarnation (the same `salt` is fine) necessarily derives a different `channelId`, and vouchers from the previous incarnation are unusable against it — they fail as wrong-address (`VoucherChannelMismatch`) or target a deallocated account. Metering state is keyed by `channelId` alone (see item 6); the address is already per-incarnation, so no `(channelId, open_slot)` composite key is needed. Prefunded balances are never credited to the channel — surplus escrow tokens are swept to treasury at `seal` and surplus PDA lamports flow to `rent_payer` at close — so the server MUST derive spendable capacity and pending settlement from `Channel` state (`deposit`, `settled`, `payout_watermark`), never from the raw escrow ATA balance or PDA lamports. See [ADR-001 → Accounting authority](./001-payment-channel-state-machine.md#accounting-authority).
+9. **Treat `Channel` state, not raw account balances, as authoritative.** The two addresses created during `open` are publicly derivable from the open payload — the **channel PDA** (`find_program_address([b"channel", payer, payee, mint, authorizedSigner, salt.to_le_bytes(), openSlot.to_le_bytes()], channelProgram)`) and the **escrow ATA** (`ATA(channelPda, mint, tokenProgram)`) — so a third party can prefund either before the server's `open` transaction lands. `open` is prefund-tolerant: both creates are idempotent, so a prefunded but still-uninitialized channel PDA (a system-owned, data-empty account that only holds lamports), or a pre-existing canonical escrow ATA, is accepted rather than reverting `open`. Reusing the full seed tuple of a *live* channel reverts `open` (the PDA holds an initialized `Channel`, so the signed `Allocate` cannot re-run over it) — resume that channel instead of re-opening it; "resume" only applies to live channels. Reopening a *fully closed* relationship means opening a fresh channel at a **new address**: `open_slot` is a PDA seed, so a new incarnation (the same `salt` is fine) necessarily derives a different `channelId`, and vouchers from the previous incarnation are unusable against it — they fail as wrong-address (`VoucherChannelMismatch`) or target a deallocated account. Metering state is keyed by `channelId` alone (see item 6); the address is already per-incarnation, so no `(channelId, open_slot)` composite key is needed. Prefunded balances are never credited to the channel — the terminal `distribute` from `SEALED` sweeps surplus escrow tokens to treasury, and full deallocation returns surplus PDA lamports to `rent_payer` — so the server MUST derive spendable capacity and pending settlement from `Channel` state (`deposit`, `settled`, `payout_watermark`), never from the raw escrow ATA balance or PDA lamports. See [ADR-001 → Accounting authority](./001-payment-channel-state-machine.md#accounting-authority).
+10. **Preflight every payout destination before `distribute`.** For each nonzero cumulative recipient/payee delta, and for a pending nonzero payer refund in the `SEALED` branch, the server SHOULD verify that the canonical ATA exists, is initialized, has the expected authority, and uses only supported Token-2022 account extensions. Otherwise the program redirects that amount to treasury, emits `PayoutRedirected`, and permanently advances past it. The server MUST also pass the exact canonical ATA address; a wrong address hard-fails the transaction.
 
 ## Happy Path
 
@@ -141,17 +144,25 @@ sequenceDiagram
     end
 
     Note over S: (optional) mid-session distribute
+    S->>P: submit Ed25519 ix + `settle` ix (latest voucher)
+    P->>P: verify voucher<br/>settled = N
     S->>P: submit `distribute` ix (preimage)
     P->>P: verify hash(preimage)<br/>transfer cumulative floor deltas -> recipients/payee<br/>payout_watermark = settled<br/>floor dust stays claimable<br/>state stays OPEN
     P-->>S: OK
 
     Note over S: Server decides to close
-    S->>P: submit `settleAndSeal` ix (final voucher)
+    S->>P: submit Ed25519 ix + `settleAndSeal` ix (final voucher)
     P->>P: verify voucher, set settled<br/>state = SEALED
     P-->>S: OK
 
     S->>P: submit `distribute` ix (preimage)
-    P->>P: verify hash(preimage)<br/>final cumulative deltas -> recipients/payee<br/>transfer (deposit − settled) → payer<br/>sweep irreducible residual → treasury<br/>drain all lamports → rent_payer<br/>account fully deallocated
+    P->>P: verify hash(preimage)<br/>final cumulative deltas -> recipients/payee<br/>transfer (deposit − settled) → payer<br/>sweep irreducible residual → treasury<br/>close escrow ATA
+    alt epoch window already elapsed
+        P->>P: drain PDA lamports → rent_payer<br/>deallocate channel
+    else epoch window still active
+        P->>P: state = DISTRIBUTED
+        Note over S,P: later: permissionless `reclaim` drains PDA rent
+    end
     P-->>S: OK
 ```
 
@@ -166,12 +177,18 @@ sequenceDiagram
 
     alt Cooperative — server responsive
         C->>S: POST /channel/close<br/>(optional final voucher, no pre-signed tx)
-        S->>P: submit `settleAndSeal` ix (voucher optional)
+        S->>P: submit `settleAndSeal` ix<br/>(preceded by Ed25519 ix when voucher is present)
         P->>P: (if voucher) set settled<br/>state = SEALED
         P-->>S: OK
 
         S->>P: submit `distribute` ix (preimage)
-        P->>P: verify hash(preimage)<br/>final cumulative deltas -> recipients/payee<br/>transfer (deposit − settled) → payer<br/>sweep irreducible residual → treasury<br/>drain all lamports → rent_payer<br/>account fully deallocated
+        P->>P: verify hash(preimage)<br/>final cumulative deltas -> recipients/payee<br/>transfer (deposit − settled) → payer<br/>sweep irreducible residual → treasury<br/>close escrow ATA
+        alt epoch window already elapsed
+            P->>P: drain PDA lamports → rent_payer<br/>deallocate channel
+        else epoch window still active
+            P->>P: state = DISTRIBUTED
+            Note over S,P: later: permissionless `reclaim` drains PDA rent
+        end
         P-->>S: OK
         S->>C: 200 + receipt { txHash, refunded }
     else Forced — server unresponsive
