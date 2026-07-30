@@ -105,3 +105,7 @@ A proposed `settleBatch` instruction would let one Ed25519 voucher authorize cum
 The signed message would commit to the ordered channel-account list and carry one amount per channel, avoiding repeated signatures and channel addresses.
 A version-0 transaction with an address lookup table could then settle roughly 59 channels instead of about five, while preserving per-channel caps and replay checks.
 This is not implemented and requires a new voucher wire format; see [ADR-004](docs/004-batch-voucher-settlement.md) for the adversarial analysis and trade-offs.
+
+## Security audit
+
+The program was audited by [Cantina](https://cantina.xyz). Read the [July 2026 security audit](audits/report-cli-cantina-7e1ee899-54e4-4841-8c70-c73e667a0a39-2026-07-27-solana-foundation-payment-channels-9c97d575.pdf).
