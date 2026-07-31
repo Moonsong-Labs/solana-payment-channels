@@ -151,7 +151,7 @@ clean:
 #      change run `just generate-client` and commit.
 #   3. Commit + push to the public repo — verified builds verify a pushed commit.
 
-repo_url    := "https://github.com/Moonsong-Labs/solana-payment-channels"
+repo_url    := "https://github.com/solana-foundation/payment-channels"
 lib_name    := "payment_channels"
 mainnet_url := "https://api.mainnet-beta.solana.com"
 devnet_url  := "https://api.devnet.solana.com"
