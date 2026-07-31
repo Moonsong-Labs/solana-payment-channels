@@ -5,8 +5,10 @@ set shell := ["bash", "-uc"]
 program_dir   := "program/payment_channels"
 ts_client_dir := "clients/typescript"
 program_id    := "CHNLxYvVA28MJP9PrFuDXccuoGXAx7jBacfLEkahyGsX"
+devnet_program_id := "CHNLxYvVA28MJP9PrFuDXccuoGXAx7jBacfLEkahyGsX"
 idl_file      := program_dir / "idl/payment_channels.json"
 raw_idl_file  := program_dir / "idl/payment_channels.raw.json"
+devnet_idl_file := "target/idl/payment_channels.devnet.json"
 
 default:
     @just --list
@@ -65,6 +67,14 @@ generate-idl:
     cd {{program_dir}} && GENERATE_IDL="$RANDOM-$(date +%s)" cargo build --features idl
     pnpm exec codama run idl --idl {{raw_idl_file}}
     @echo "✓ IDL: {{idl_file}}"
+
+# Generate a temporary devnet IDL without replacing the tracked mainnet IDL.
+generate-idl-devnet:
+    cd {{program_dir}} && GENERATE_IDL="$RANDOM-$(date +%s)" cargo build --no-default-features --features idl,devnet
+    CODAMA_IDL_PATH={{devnet_idl_file}} \
+        pnpm exec codama run idl --idl {{raw_idl_file}}
+    test "$(node -p "require('./{{devnet_idl_file}}').program.publicKey")" = "{{devnet_program_id}}"
+    @echo "✓ devnet IDL: {{devnet_idl_file}}"
 
 generate-client: generate-idl
     pnpm run generate
@@ -169,7 +179,62 @@ program-hash-mainnet:
     solana-verify get-program-hash -u "${RPC_URL:-{{mainnet_url}}}" {{program_id}}
 
 program-hash-devnet:
-    solana-verify get-program-hash -u {{devnet_url}} {{program_id}}
+    solana-verify get-program-hash -u "${RPC_URL:-{{devnet_url}}}" {{devnet_program_id}}
+
+# Read-only checks before a devnet deploy. DEPLOYER_KEYPAIR is the funded fee
+# payer / upgrade authority. PROGRAM_KEYPAIR is additionally required for the
+# first deployment and must resolve to the committed program id.
+preflight-devnet:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    : "${DEPLOYER_KEYPAIR:?set DEPLOYER_KEYPAIR=path/to/funded-payer-and-authority.json}"
+    RPC="${RPC_URL:-{{devnet_url}}}"
+    test -f target/deploy/{{lib_name}}.so || { echo "run 'just verified-build devnet' first"; exit 1; }
+    echo "cluster: $RPC"
+    echo "deployer: $(solana address -k "$DEPLOYER_KEYPAIR")"
+    echo "balance: $(solana balance -u "$RPC" -k "$DEPLOYER_KEYPAIR")"
+    if solana program show -u "$RPC" {{devnet_program_id}} >/dev/null 2>&1; then
+        echo "deployment: upgrade"
+        solana program show -u "$RPC" {{devnet_program_id}}
+    else
+        : "${PROGRAM_KEYPAIR:?set PROGRAM_KEYPAIR=path/to/program-account-keypair.json for an initial deploy}"
+        test "$(solana address -k "$PROGRAM_KEYPAIR")" = "{{devnet_program_id}}" \
+            || { echo "PROGRAM_KEYPAIR address != {{devnet_program_id}}"; exit 1; }
+        echo "deployment: initial"
+    fi
+    echo "local executable hash:"
+    solana-verify get-executable-hash target/deploy/{{lib_name}}.so
+
+# FIRST devnet deploy only. Creates the program account at PROGRAM_KEYPAIR and
+# sets DEPLOYER_KEYPAIR as its upgrade authority. Run `just preflight-devnet`
+# and review its output before invoking this SOL-spending recipe.
+deploy-devnet-initial:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    : "${PROGRAM_KEYPAIR:?set PROGRAM_KEYPAIR=path/to/program-account-keypair.json}"
+    : "${DEPLOYER_KEYPAIR:?set DEPLOYER_KEYPAIR=path/to/funded-payer-and-authority.json}"
+    test -f target/deploy/{{lib_name}}.so || { echo "run 'just verified-build devnet' first"; exit 1; }
+    test "$(solana address -k "$PROGRAM_KEYPAIR")" = "{{devnet_program_id}}" \
+        || { echo "PROGRAM_KEYPAIR address != {{devnet_program_id}}"; exit 1; }
+    RPC="${RPC_URL:-{{devnet_url}}}"
+    solana program deploy -u "$RPC" target/deploy/{{lib_name}}.so \
+        --program-id "$PROGRAM_KEYPAIR" \
+        --keypair "$DEPLOYER_KEYPAIR" \
+        --upgrade-authority "$DEPLOYER_KEYPAIR" \
+        --with-compute-unit-price 50000 --max-sign-attempts 100 --use-rpc
+
+# Upgrade an existing devnet deployment. DEPLOYER_KEYPAIR must be its current
+# upgrade authority. Run `just preflight-devnet` first.
+deploy-devnet-upgrade:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    : "${DEPLOYER_KEYPAIR:?set DEPLOYER_KEYPAIR=path/to/upgrade-authority.json}"
+    test -f target/deploy/{{lib_name}}.so || { echo "run 'just verified-build devnet' first"; exit 1; }
+    RPC="${RPC_URL:-{{devnet_url}}}"
+    solana program deploy -u "$RPC" target/deploy/{{lib_name}}.so \
+        --program-id {{devnet_program_id}} \
+        --keypair "$DEPLOYER_KEYPAIR" \
+        --with-compute-unit-price 50000 --max-sign-attempts 100 --use-rpc
 
 # FIRST mainnet deploy only. Creates the program account at the PROGRAM_KEYPAIR
 # address (must equal {{program_id}}) and sets DEPLOYER_KEYPAIR as the upgrade
@@ -213,12 +278,27 @@ deploy-idl-mainnet: generate-idl
     program-metadata write idl {{program_id}} {{idl_file}} \
         --keypair "$IDL_AUTHORITY_KEYPAIR" --rpc "${RPC_URL:-{{mainnet_url}}}"
 
-deploy-idl-devnet: generate-idl
+deploy-idl-devnet: generate-idl-devnet
     #!/usr/bin/env bash
     set -euo pipefail
     : "${IDL_AUTHORITY_KEYPAIR:?set IDL_AUTHORITY_KEYPAIR=path/to/authority.json}"
-    program-metadata write idl {{program_id}} {{idl_file}} \
-        --keypair "$IDL_AUTHORITY_KEYPAIR" --rpc {{devnet_url}}
+    program-metadata write idl {{devnet_program_id}} {{devnet_idl_file}} \
+        --keypair "$IDL_AUTHORITY_KEYPAIR" --rpc "${RPC_URL:-{{devnet_url}}}"
+
+# Submit the deployed devnet program for verified-build verification against
+# the public repo at the current clean commit.
+verify-devnet:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    : "${DEPLOYER_KEYPAIR:?set DEPLOYER_KEYPAIR=path/to/funded-verification-signer.json}"
+    test -z "$(git status --porcelain)" || { echo "working tree dirty; commit + push first"; exit 1; }
+    solana-verify verify-from-repo {{repo_url}} -u "${RPC_URL:-{{devnet_url}}}" \
+        --keypair "$DEPLOYER_KEYPAIR" \
+        --program-id {{devnet_program_id}} \
+        --library-name {{lib_name}} \
+        --base-image {{base_image}} \
+        --commit-hash "$(git rev-parse HEAD)" \
+        --cargo-build-sbf-args="--no-default-features --features devnet"
 
 # Submit the deployed mainnet program for verified-build verification against
 # the public repo at the CURRENT commit. Run on a clean, pushed tree. The

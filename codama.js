@@ -1,4 +1,5 @@
-const IDL_PATH = './program/payment_channels/idl/payment_channels.json';
+const IDL_PATH =
+  process.env.CODAMA_IDL_PATH ?? './program/payment_channels/idl/payment_channels.json';
 
 export default {
   idl: IDL_PATH,
