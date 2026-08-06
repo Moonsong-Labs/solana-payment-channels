@@ -242,10 +242,25 @@ rearm + topUp        ≈ 29,200 cost units
 vs open + close + reclaim  60,709          → 2.1× cheaper (3.2× excluding topUp)
 ```
 
-The one-time `open` and eventual terminal close still exist but amortize over
-the channel's whole life: with K sessions per channel the per-session overhead
-adds `(36,086 + ~21,300 + 748) / K ≈ 58,134 / K` units — under 600 units at
-K = 100.
+The one-time `open` and eventual terminal close amortize over the channel's
+whole life, and the accounting must not double-charge the last session: a
+channel hosting K sessions pays `open` once, **K − 1** re-arm boundaries (the
+final voucher of sessions 1..K−1 rides `rearm`; the next deposit rides
+`topUp`), **one** terminal close carrying the last session's voucher (23,875
+measured), and one reclaim. Per session:
+
+```text
+lifecycle(K) = [ 36,086 + (K − 1) × 29,200 + 23,875 + 748 ] / K
+             = 29,200 + 31,509 / K
+```
+
+At K = 1 this degenerates exactly to today's lifecycle (60,709 cost units —
+zero re-arms occur), so **re-arm is never worse than close-and-reopen and
+strictly better for every K > 1**. The overhead term is ~315 units at
+K = 100 and vanishes asymptotically. Simulations must use this form: the
+naive `boundary + (open + close + reclaim) / K` charges session K for both a
+re-arm and the terminal close and wrongly shows re-arm *losing* to
+close-and-reopen at small K.
 
 **Capacity implication.** At 1M logical payments/s and a 125M units/s
 available budget, the minimum session window at 60 RPM per user drops from
