@@ -1,0 +1,13 @@
+{
+    "extends": ["@solana/eslint-config-solana", "@solana/eslint-config-solana/react"],
+    "parserOptions": {
+        "ecmaVersion": "latest",
+        "project": "./tsconfig.json",
+        "sourceType": "module"
+    },
+    "settings": {
+        "react": {
+            "version": "detect"
+        }
+    }
+}
