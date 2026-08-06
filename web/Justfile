@@ -1,0 +1,45 @@
+#!/usr/bin/env just --justfile
+
+set shell := ["zsh", "-cu"]
+
+project_dir := justfile_directory()
+dev_session := "one-mil-ui"
+
+@default:
+  just --list
+
+@dev:
+  pnpm dev
+
+@dev-up:
+  if tmux has-session -t {{dev_session}} 2>/dev/null; then echo "UI already running at http://127.0.0.1:5173"; else tmux new-session -d -s {{dev_session}} -c "{{project_dir}}" "pnpm dev"; sleep 1; echo "UI started at http://127.0.0.1:5173"; fi
+
+@dev-status:
+  if tmux has-session -t {{dev_session}} 2>/dev/null; then echo "UI running at http://127.0.0.1:5173"; else echo "UI stopped"; exit 1; fi
+
+@dev-down:
+  tmux kill-session -t {{dev_session}} 2>/dev/null || true
+
+@build:
+  pnpm build
+
+@lint:
+  pnpm lint
+
+@test:
+  pnpm test
+
+@ci:
+  pnpm exec prettier --check src tests sweep.mjs
+  pnpm lint
+  pnpm build
+  pnpm test
+
+@format:
+  pnpm format
+
+@fmt:
+  pnpm format
+
+@install:
+  pnpm install

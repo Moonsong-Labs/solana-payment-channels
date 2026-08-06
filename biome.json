@@ -14,7 +14,8 @@
       "!**/node_modules/**",
       "!program/payment_channels/idl/**",
       "!keys/**",
-      "!pnpm-lock.yaml"
+      "!pnpm-lock.yaml",
+      "!web/**"
     ]
   },
   "formatter": {
