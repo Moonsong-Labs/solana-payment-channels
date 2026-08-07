@@ -99,12 +99,13 @@ Cluster builds (`just build-mainnet-beta`, `just build-devnet`, …) require tha
 
 MIT. See [LICENSE](LICENSE).
 
-## Future work: batch voucher settlement
+## Future work: payment channel v2
 
-A proposed `settleBatch` instruction would let one Ed25519 voucher authorize cumulative targets for many channels that share an `authorized_signer`.
-The signed message would commit to the ordered channel-account list and carry one amount per channel, avoiding repeated signatures and channel addresses.
-A version-0 transaction with an address lookup table could then settle roughly 59 channels instead of about five, while preserving per-channel caps and replay checks.
-This is not implemented and requires a new voucher wire format; see [ADR-004](docs/004-batch-voucher-settlement.md) for the adversarial analysis and trade-offs.
+"v2" is a set of proposed, unimplemented ADRs that keep the version-1 voucher format and the escrow model but cut the per-session and per-channel settlement cost. None is enabled in production; all are planning envelopes, not benchmarks.
+
+- **[ADR-004](docs/004-batch-voucher-settlement.md) — batch voucher settlement.** A `settleBatch` instruction lets one Ed25519 voucher authorize cumulative targets for many channels that share an `authorized_signer`, committing to the ordered channel list and one amount per channel. A version-0 transaction with an address lookup table then settles roughly 59 channels instead of about five, preserving per-channel caps and replay checks. Requires a new voucher wire format.
+- **[ADR-005](docs/005-channel-rearm.md) — channel re-arm.** A `rearm` instruction ends one session and starts the next on the *same* accounts — enforce the final voucher, pay pending deltas, refund the payer's unspent deposit, leave the channel `OPEN` — so a persistent channel amortizes its one-time open/close over K sessions (~2.1× cheaper per boundary) with no `Channel` layout change and no new wire format. This is the core of v2.
+- **[ADR-006](docs/006-settlement-rollup.md) — settlement rollup.** A candidate only: one ~300k-CU Groth16 proof, built on the alt-bn128 pairing syscalls already live on mainnet, attests N cross-payer vouchers at once so settlement *verification* becomes independent of N. Warranted only for mutually-distrusting payers whose channels cannot share an `authorized_signer` — otherwise ADR-004 + the MPP operator-signed mode already settle more cheaply.
 
 ## Security audit
 
