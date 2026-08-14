@@ -12,7 +12,7 @@
       "!**/generated/**",
       "!**/target/**",
       "!**/node_modules/**",
-      "!program/payment_channels/idl/**",
+      "!program/tabs/idl/**",
       "!keys/**",
       "!pnpm-lock.yaml",
       "!web/**"

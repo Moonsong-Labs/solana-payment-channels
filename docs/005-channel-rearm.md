@@ -2,7 +2,7 @@
 
 **Status:** Proposed future work — not implemented
 
-**Parent ADRs:** [ADR-001](./001-payment-channel-state-machine.md),
+**Parent ADRs:** [ADR-001](./001-tab-state-machine.md),
 [ADR-002](./002-http-protocol.md), [ADR-003](./003-program-instructions.md),
 [ADR-004](./004-batch-voucher-settlement.md)
 
@@ -362,4 +362,4 @@ Do not enable in production until all of these pass:
    ADR-003 (instruction reference), and generated clients only after the wire
    contract is pinned by tests.
 
-[PR #77]: https://github.com/solana-foundation/payment-channels/pull/77
+[PR #77]: https://github.com/solana-foundation/tabs/pull/77

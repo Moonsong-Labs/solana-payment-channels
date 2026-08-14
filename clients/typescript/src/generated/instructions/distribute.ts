@@ -32,7 +32,7 @@ import {
 } from "@solana/program-client-core";
 import { getU8Decoder, getU8Encoder } from "../../safe-codecs.js";
 import { findEventAuthorityPda } from "../pdas";
-import { PAYMENT_CHANNELS_PROGRAM_ADDRESS } from "../programs";
+import { TABS_PROGRAM_ADDRESS } from "../programs";
 import {
   getDistributeArgsDecoder,
   getDistributeArgsEncoder,
@@ -47,7 +47,7 @@ export function getDistributeDiscriminatorBytes(): ReadonlyUint8Array {
 }
 
 export type DistributeInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountChannel extends string | AccountMeta<string> = string,
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountRentPayer extends string | AccountMeta<string> = string,
@@ -178,7 +178,7 @@ export async function getDistributeInstructionAsync<
   TAccountTokenProgram extends string,
   TAccountEventAuthority extends string,
   TAccountSelfProgram extends string,
-  TProgramAddress extends Address = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof TABS_PROGRAM_ADDRESS,
 >(
   input: DistributeAsyncInput<
     TAccountChannel,
@@ -211,8 +211,7 @@ export async function getDistributeInstructionAsync<
   >
 > {
   // Program address.
-  const programAddress =
-    config?.programAddress ?? PAYMENT_CHANNELS_PROGRAM_ADDRESS;
+  const programAddress = config?.programAddress ?? TABS_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -338,7 +337,7 @@ export function getDistributeInstruction<
   TAccountTokenProgram extends string,
   TAccountEventAuthority extends string,
   TAccountSelfProgram extends string,
-  TProgramAddress extends Address = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof TABS_PROGRAM_ADDRESS,
 >(
   input: DistributeInput<
     TAccountChannel,
@@ -369,8 +368,7 @@ export function getDistributeInstruction<
   TAccountSelfProgram
 > {
   // Program address.
-  const programAddress =
-    config?.programAddress ?? PAYMENT_CHANNELS_PROGRAM_ADDRESS;
+  const programAddress = config?.programAddress ?? TABS_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -454,7 +452,7 @@ export function getDistributeInstruction<
 }
 
 export type ParsedDistributeInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;

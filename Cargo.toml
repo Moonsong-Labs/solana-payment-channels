@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "program/payment_channels",
+    "program/tabs",
     "clients/rust",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-payment_channels_client = { path = "clients/rust" }
+tabs_client = { path = "clients/rust" }
 
 [profile.release]
 overflow-checks = true

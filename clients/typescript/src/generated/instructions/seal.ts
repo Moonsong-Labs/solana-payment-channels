@@ -29,7 +29,7 @@ import {
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
 import { getU8Decoder, getU8Encoder } from "../../safe-codecs.js";
-import { PAYMENT_CHANNELS_PROGRAM_ADDRESS } from "../programs";
+import { TABS_PROGRAM_ADDRESS } from "../programs";
 
 export const SEAL_DISCRIMINATOR = 6;
 
@@ -38,7 +38,7 @@ export function getSealDiscriminatorBytes(): ReadonlyUint8Array {
 }
 
 export type SealInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountChannel extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -83,14 +83,13 @@ export type SealInput<TAccountChannel extends string = string> = {
 
 export function getSealInstruction<
   TAccountChannel extends string,
-  TProgramAddress extends Address = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof TABS_PROGRAM_ADDRESS,
 >(
   input: SealInput<TAccountChannel>,
   config?: { programAddress?: TProgramAddress },
 ): SealInstruction<TProgramAddress, TAccountChannel> {
   // Program address.
-  const programAddress =
-    config?.programAddress ?? PAYMENT_CHANNELS_PROGRAM_ADDRESS;
+  const programAddress = config?.programAddress ?? TABS_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -110,7 +109,7 @@ export function getSealInstruction<
 }
 
 export type ParsedSealInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;

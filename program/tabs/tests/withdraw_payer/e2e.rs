@@ -1,0 +1,156 @@
+//! End-to-end validation of `withdraw_payer` against the compiled .so.
+
+#![allow(clippy::result_large_err)]
+
+use litesvm::LiteSVM;
+use litesvm_token::{CreateAssociatedTokenAccount, CreateMint, MintTo};
+use tabs_client::instructions::WithdrawPayer;
+use solana_keypair::Keypair;
+use solana_pubkey::Pubkey;
+use solana_signer::Signer;
+use solana_transaction::Transaction;
+
+use crate::common::{
+    ProgramLoader, SPL_TOKEN, mutate_channel, open_channel, read_channel, set_clock, token_balance,
+};
+use tabs::state::ChannelStatus;
+
+fn send_withdraw_payer(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    channel: &Pubkey,
+    channel_ata: &Pubkey,
+    payer_ata: &Pubkey,
+    mint: &Pubkey,
+) -> Result<litesvm::types::TransactionMetadata, litesvm::types::FailedTransactionMetadata> {
+    let ix = WithdrawPayer {
+        payer: payer.pubkey(),
+        channel: *channel,
+        channel_token_account: *channel_ata,
+        payer_token_account: *payer_ata,
+        mint: *mint,
+        token_program: SPL_TOKEN,
+    }
+    .instruction();
+    let tx = Transaction::new_signed_with_payer(
+        &[ix],
+        Some(&payer.pubkey()),
+        &[payer],
+        svm.latest_blockhash(),
+    );
+    svm.send_transaction(tx)
+}
+
+#[test]
+fn withdraw_transfers_correct_amount() {
+    let mut svm = LiteSVM::load_program();
+    let payer = Keypair::new();
+    svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
+
+    let payee = Pubkey::new_unique();
+    let authorized_signer = Keypair::new().pubkey();
+    let deposit: u64 = 100_000_000;
+    let settled: u64 = 30_000_000;
+
+    let mint = CreateMint::new(&mut svm, &payer)
+        .decimals(0)
+        .token_program_id(&SPL_TOKEN)
+        .send()
+        .unwrap();
+    let payer_ata = CreateAssociatedTokenAccount::new(&mut svm, &payer, &mint)
+        .token_program_id(&SPL_TOKEN)
+        .send()
+        .unwrap();
+    MintTo::new(&mut svm, &payer, &mint, &payer_ata, deposit)
+        .token_program_id(&SPL_TOKEN)
+        .send()
+        .unwrap();
+
+    let (channel, channel_ata) = open_channel(
+        &mut svm,
+        &payer,
+        &payee,
+        &authorized_signer,
+        1,
+        deposit,
+        &mint,
+        &payer_ata,
+        &SPL_TOKEN,
+    );
+
+    // After open: payer ATA is empty, escrow has deposit.
+    assert_eq!(token_balance(&svm, &payer_ata), 0);
+    assert_eq!(token_balance(&svm, &channel_ata), deposit);
+
+    mutate_channel(&mut svm, &channel, |ch| {
+        ch.status = ChannelStatus::Sealed as u8;
+        ch.set_settled(settled);
+    });
+    set_clock(&mut svm, 1_000_000);
+
+    send_withdraw_payer(&mut svm, &payer, &channel, &channel_ata, &payer_ata, &mint)
+        .expect("withdraw ok");
+
+    // Payer receives deposit - settled; escrow retains settled (for distribute).
+    assert_eq!(token_balance(&svm, &payer_ata), deposit - settled);
+    assert_eq!(token_balance(&svm, &channel_ata), settled);
+    assert_ne!(
+        read_channel(&svm, &channel, |ch| ch.payer_withdrawn_at()),
+        0
+    );
+}
+
+#[test]
+fn withdraw_zero_refund_stamps_timestamp() {
+    let mut svm = LiteSVM::load_program();
+    let payer = Keypair::new();
+    svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
+
+    let payee = Pubkey::new_unique();
+    let authorized_signer = Keypair::new().pubkey();
+    let deposit: u64 = 100_000_000;
+
+    let mint = CreateMint::new(&mut svm, &payer)
+        .decimals(0)
+        .token_program_id(&SPL_TOKEN)
+        .send()
+        .unwrap();
+    let payer_ata = CreateAssociatedTokenAccount::new(&mut svm, &payer, &mint)
+        .token_program_id(&SPL_TOKEN)
+        .send()
+        .unwrap();
+    MintTo::new(&mut svm, &payer, &mint, &payer_ata, deposit)
+        .token_program_id(&SPL_TOKEN)
+        .send()
+        .unwrap();
+
+    let (channel, channel_ata) = open_channel(
+        &mut svm,
+        &payer,
+        &payee,
+        &authorized_signer,
+        1,
+        deposit,
+        &mint,
+        &payer_ata,
+        &SPL_TOKEN,
+    );
+
+    // Fully settled: deposit == settled → refund = 0.
+    mutate_channel(&mut svm, &channel, |ch| {
+        ch.status = ChannelStatus::Sealed as u8;
+        ch.set_settled(deposit);
+    });
+    set_clock(&mut svm, 1_000_000);
+
+    send_withdraw_payer(&mut svm, &payer, &channel, &channel_ata, &payer_ata, &mint)
+        .expect("withdraw ok (zero refund)");
+
+    assert_eq!(token_balance(&svm, &payer_ata), 0);
+    assert_eq!(token_balance(&svm, &channel_ata), deposit);
+    // payer_withdrawn_at stamped — distribute cannot double-refund.
+    assert_ne!(
+        read_channel(&svm, &channel, |ch| ch.payer_withdrawn_at()),
+        0
+    );
+}

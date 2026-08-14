@@ -1,0 +1,413 @@
+#[cfg(feature = "idl")]
+use alloc::vec::Vec;
+#[cfg(feature = "idl")]
+use codama::CodamaType;
+use core::mem::size_of;
+use pinocchio::{
+    AccountView, Address, ProgramResult,
+    cpi::Signer,
+    error::ProgramError,
+    sysvars::{Sysvar, clock::Clock, rent::Rent},
+};
+use pinocchio_associated_token_account::instructions::CreateIdempotent;
+use pinocchio_system::instructions::{Allocate, Assign, Transfer as SystemTransfer};
+use pinocchio_token_2022::instructions::TransferChecked;
+
+use crate::constants::OPEN_SLOT_WINDOW;
+use crate::errors::TabsError;
+use crate::helpers::accounts::view::ChannelAccountView;
+use crate::helpers::accounts::view::ChannelContext;
+use crate::helpers::accounts::view::ChannelTokenAccountView;
+use crate::helpers::accounts::view::MintAccountView;
+use crate::helpers::accounts::view::PayeeAccountView;
+use crate::helpers::accounts::view::PayerAccountView;
+use crate::helpers::accounts::view::PayerContext;
+use crate::helpers::accounts::view::PayerTokenAccountView;
+use crate::helpers::accounts::view::TokenContext;
+use crate::helpers::accounts::view::TokenProgramAccountView;
+use crate::state::{Channel, Transmutable, load};
+
+use crate::event_engine::EventSerialize;
+use crate::event_engine::emit_event;
+use crate::events::Opened;
+#[cfg(feature = "idl")]
+use crate::instructions::helpers::DistributionEntry;
+pub use crate::instructions::helpers::MAX_DISTRIBUTION_RECIPIENTS;
+use crate::instructions::helpers::{DistributionPreimage, channel_signer_seeds};
+
+/// Instruction discriminator byte for `open`.
+pub const DISCRIMINATOR: u8 = 1;
+
+/// Init payload. The distribution plan is hashed on-chain with `sha256` and
+/// the digest stored in
+/// [`Channel::distribution_hash`](crate::Channel::distribution_hash).
+/// [`distribute`](crate::instructions::distribute) later verifies a matching
+/// preimage before paying out splits.
+///
+/// Wire layout: `salt(8) | deposit(8) | grace_period(4) | open_slot(8) |
+/// count(u32 LE) | entries(count × 34)`.
+#[derive(Debug, Clone, Copy)]
+pub struct OpenArgs<'a> {
+    header: &'a OpenArgsHeader,
+    pub recipients: DistributionPreimage<'a>,
+}
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy)]
+struct LeU64([u8; size_of::<u64>()]);
+
+impl LeU64 {
+    #[inline(always)]
+    fn get(&self) -> u64 {
+        u64::from_le_bytes(self.0)
+    }
+}
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy)]
+struct LeU32([u8; size_of::<u32>()]);
+
+impl LeU32 {
+    #[inline(always)]
+    fn get(&self) -> u32 {
+        u32::from_le_bytes(self.0)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct OpenArgsHeader {
+    /// PDA disambiguator stored in [`Channel::salt`](crate::Channel::salt).
+    salt: LeU64,
+    /// Initial escrow amount and ceiling for [`Channel::settled`](crate::Channel::settled).
+    deposit: LeU64,
+    /// Grace duration, in seconds.
+    grace_period: LeU32,
+    /// Client-supplied per-incarnation epoch. Validated on-chain against the
+    /// Clock: `open_slot <= clock.slot && clock.slot - open_slot <= K`
+    /// ([`OPEN_SLOT_WINDOW`]). Client-supplied (not Clock-derived) so the
+    /// client knows the voucher-binding epoch at transaction-build time and
+    /// can pre-sign vouchers while `open` is in flight; the paired window +
+    /// close gate keep `(address, open_slot)` unique across incarnations.
+    open_slot: LeU64,
+}
+
+unsafe impl Transmutable for OpenArgsHeader {
+    const LEN: usize = size_of::<Self>();
+}
+
+const _: () = assert!(size_of::<LeU64>() == size_of::<u64>());
+const _: () = assert!(core::mem::align_of::<LeU64>() == 1);
+const _: () = assert!(size_of::<LeU32>() == size_of::<u32>());
+const _: () = assert!(core::mem::align_of::<LeU32>() == 1);
+const _: () = assert!(
+    size_of::<OpenArgsHeader>()
+        == size_of::<u64>() + size_of::<u64>() + size_of::<u32>() + size_of::<u64>()
+);
+const _: () = assert!(core::mem::align_of::<OpenArgsHeader>() == 1);
+
+#[cfg(feature = "idl")]
+#[allow(dead_code)]
+#[derive(CodamaType)]
+#[codama(name = "open_args")]
+pub struct OpenArgsWire {
+    pub salt: u64,
+    pub deposit: u64,
+    pub grace_period: u32,
+    pub open_slot: u64,
+    pub recipients: Vec<DistributionEntry>,
+}
+
+impl<'a> OpenArgs<'a> {
+    #[inline(always)]
+    pub fn salt(&self) -> u64 {
+        self.header.salt.get()
+    }
+
+    #[inline(always)]
+    pub fn deposit(&self) -> u64 {
+        self.header.deposit.get()
+    }
+
+    #[inline(always)]
+    pub fn grace_period(&self) -> u32 {
+        self.header.grace_period.get()
+    }
+
+    #[inline(always)]
+    pub fn open_slot(&self) -> u64 {
+        self.header.open_slot.get()
+    }
+
+    pub fn load(data: &'a [u8]) -> Result<Self, ProgramError> {
+        if data.len() < OpenArgsHeader::LEN {
+            return Err(ProgramError::InvalidInstructionData);
+        }
+        let (header_bytes, recipients_bytes) = data.split_at(OpenArgsHeader::LEN);
+        let header = unsafe { load::<OpenArgsHeader>(header_bytes) }
+            .map_err(|_| ProgramError::InvalidInstructionData)?;
+        let recipients = DistributionPreimage::load(recipients_bytes)?;
+        Ok(Self { header, recipients })
+    }
+}
+
+/// [`Self::payer`], [`Self::payee`], [`Self::mint`],
+/// [`Self::authorized_signer`] are PDA seed inputs.
+pub struct OpenAccounts<'a> {
+    /// Funds the token deposit and signs the authorization.
+    pub payer: PayerAccountView<'a>,
+    /// Funds the PDA + escrow-ATA rent (the transaction submitter / operator).
+    /// Stored as [`Channel::rent_payer`](crate::Channel::rent_payer) and
+    /// refunded on SEALED cleanup. MAY equal [`Self::payer`].
+    ///
+    /// MUST be a signer: rent is pulled from here via a `SystemTransfer`, which
+    /// debits the account and therefore requires its signature. A gas-less
+    /// relayer must be passed as this signer account meta — merely being the
+    /// transaction fee payer is not sufficient.
+    pub rent_payer: &'a AccountView,
+    /// Bound into [`Channel::payee`](crate::Channel::payee).
+    pub payee: PayeeAccountView<'a>,
+    /// Token mint for the channel's escrow.
+    pub mint: MintAccountView<'a>,
+    /// Bound as
+    /// [`Channel::authorized_signer`](crate::Channel::authorized_signer)
+    /// (voucher author).
+    pub authorized_signer: &'a AccountView,
+    /// Channel PDA. Must equal `Channel::find_pda(payer, payee, mint,
+    /// authorized_signer, salt, open_slot)` — derive client-side and pass as
+    /// writable.
+    /// Verified on-chain against the derived address before allocation.
+    pub channel: ChannelAccountView<'a>,
+    pub payer_token_account: PayerTokenAccountView<'a>,
+    /// Escrow ATA owned by the channel PDA. Must equal the associated token
+    /// address for `(channel, token_program, mint)` — derive client-side
+    /// and pass as writable. Verified on-chain before the ATA is created.
+    pub channel_token_account: ChannelTokenAccountView<'a>,
+    pub token_program: TokenProgramAccountView<'a>,
+    pub system_program: &'a AccountView,
+    pub rent: &'a AccountView,
+    /// Associated Token Account program; required by the runtime for the
+    /// `CreateAta` CPI.
+    pub associated_token_program: &'a AccountView,
+    /// Signer PDA for the self-CPI that emits [`crate::events::Opened`].
+    pub event_authority: &'a AccountView,
+    /// This program's ID; CPI target for the event emission.
+    pub self_program: &'a AccountView,
+}
+
+impl<'a> TryFrom<&'a mut [AccountView]> for OpenAccounts<'a> {
+    type Error = ProgramError;
+
+    fn try_from(accounts: &'a mut [AccountView]) -> Result<Self, Self::Error> {
+        let [
+            payer,
+            rent_payer,
+            payee,
+            mint,
+            authorized_signer,
+            channel,
+            payer_token_account,
+            channel_token_account,
+            token_program,
+            system_program,
+            rent,
+            associated_token_program,
+            event_authority,
+            self_program,
+        ] = accounts
+        else {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        };
+        Ok(Self {
+            payer: payer.into(),
+            rent_payer,
+            payee: payee.into(),
+            mint: mint.into(),
+            authorized_signer,
+            channel: channel.into(),
+            payer_token_account: payer_token_account.into(),
+            channel_token_account: channel_token_account.into(),
+            token_program: token_program.into(),
+            system_program,
+            rent,
+            associated_token_program,
+            event_authority,
+            self_program,
+        })
+    }
+}
+
+/// Payer-signed; creates the [`Channel`](crate::Channel) PDA, locks the
+/// deposit, and commits the distribution hash.
+pub fn process(
+    program_id: &Address,
+    accounts: &mut [AccountView],
+    args: &OpenArgs<'_>,
+) -> ProgramResult {
+    let accs = OpenAccounts::try_from(accounts)?;
+
+    if !accs.payer.is_signer() {
+        return Err(TabsError::MissingRequiredSignature.into());
+    }
+
+    // The rent payer funds the PDA + escrow-ATA rent via system CPI, so it must
+    // sign. It MAY be the same account as `payer`.
+    if !accs.rent_payer.is_signer() {
+        return Err(TabsError::MissingRequiredSignature.into());
+    }
+
+    if accs.payer.address() == accs.payee.address() {
+        return Err(TabsError::PayerPayeeMustDiffer.into());
+    }
+
+    let deposit = args.deposit();
+    if deposit == 0 {
+        return Err(TabsError::DepositMustBeNonZero.into());
+    }
+    if args.grace_period() < 1 {
+        return Err(TabsError::GracePeriodMustBeNonZero.into());
+    }
+
+    if !accs.authorized_signer.address().is_on_curve() {
+        return Err(TabsError::InvalidAuthorizedSigner.into());
+    }
+
+    // Epoch window: the client-supplied `open_slot` must be current-or-past
+    // (a future slot would let the payer stall the terminal close gate
+    // forever) and at most `OPEN_SLOT_WINDOW` slots stale. Paired with
+    // `distribute`'s `clock.slot > open_slot + OPEN_SLOT_WINDOW` close gate,
+    // this makes `(address, open_slot)` strictly increasing across
+    // incarnations — the voucher replay protection that lets the terminal
+    // `distribute` fully deallocate the PDA. See `constants::OPEN_SLOT_WINDOW`.
+    let open_slot = args.open_slot();
+    let current_slot = Clock::get()?.slot;
+    if open_slot > current_slot || current_slot - open_slot > OPEN_SLOT_WINDOW {
+        return Err(TabsError::OpenSlotOutOfWindow.into());
+    }
+
+    let (channel_address, bump) = Channel::find_pda(
+        accs.payer.address(),
+        accs.payee.address(),
+        accs.mint.address(),
+        accs.authorized_signer.address(),
+        args.salt(),
+        open_slot,
+    );
+
+    if args
+        .recipients
+        .entries
+        .iter()
+        .any(|entry| entry.recipient == channel_address)
+    {
+        return Err(TabsError::InvalidSplitConfig.into());
+    }
+
+    let distribution_hash = args.recipients.preimage_hash();
+
+    // Client-side derives these addresses; validate explicitly as defense in
+    // depth before any mutation (CPI enforcement provides a second layer).
+    if accs.channel.address() != &channel_address {
+        return Err(TabsError::ChannelAddressMismatch.into());
+    }
+
+    let token_ctx = TokenContext::new(accs.mint, accs.token_program)?;
+    let mut channel_ctx =
+        ChannelContext::new_uninit(accs.channel, accs.channel_token_account, token_ctx)?;
+    let payer_ctx =
+        PayerContext::new(accs.payer, accs.payer_token_account, &channel_ctx.token_ctx)?;
+
+    let salt_bytes = args.salt().to_le_bytes();
+    let open_slot_bytes = open_slot.to_le_bytes();
+    let bump_byte = [bump];
+    let seeds = channel_signer_seeds(
+        payer_ctx.payer.address().as_ref(),
+        accs.payee.address().as_ref(),
+        channel_ctx.token_ctx.mint.address().as_ref(),
+        accs.authorized_signer.address().as_ref(),
+        &salt_bytes,
+        &open_slot_bytes,
+        &bump_byte,
+    );
+    let signers = [Signer::from(&seeds)];
+
+    // Prefund-tolerant PDA creation: top up the rent shortfall, then signed
+    // Allocate + Assign. Deliberately NOT `CreateAccount` (which requires
+    // `lamports == 0`): after a channel at these seeds is fully closed,
+    // a griefer donating lamports to the dead address must not block a
+    // legitimate reopen. Surplus lamports refund to `rent_payer` at close.
+    let min_rent = Rent::from_account_view(accs.rent)?.try_minimum_balance(Channel::LEN)?;
+    let pending_balance = min_rent.saturating_sub(channel_ctx.channel.lamports());
+    if pending_balance > 0 {
+        SystemTransfer {
+            from: accs.rent_payer,
+            to: &channel_ctx.channel,
+            lamports: pending_balance,
+        }
+        .invoke()?;
+    }
+    Allocate {
+        account: &channel_ctx.channel,
+        space: Channel::LEN as u64,
+    }
+    .invoke_signed(&signers)?;
+    Assign {
+        account: &channel_ctx.channel,
+        owner: &crate::ID,
+    }
+    .invoke_signed(&signers)?;
+
+    // Create the escrow ATA owned by the channel PDA. Idempotent: tolerates
+    // a pre-existing canonical ATA so a griefer cannot block open by
+    // front-running ATA creation.
+    CreateIdempotent {
+        funding_account: accs.rent_payer,
+        account: &channel_ctx.channel_token_account,
+        wallet: &channel_ctx.channel,
+        mint: &channel_ctx.token_ctx.mint,
+        system_program: accs.system_program,
+        token_program: &channel_ctx.token_ctx.token_program,
+    }
+    .invoke()?;
+
+    // Transfer the deposit from payer to escrow.
+    TransferChecked {
+        from: &payer_ctx.payer_token_account,
+        mint: &channel_ctx.token_ctx.mint,
+        to: &channel_ctx.channel_token_account,
+        authority: &payer_ctx.payer,
+        amount: deposit,
+        decimals: channel_ctx.token_ctx.decimals,
+        token_program: channel_ctx.token_ctx.token_program.address(),
+    }
+    .invoke()?;
+
+    Channel::init_at(
+        &mut channel_ctx.channel.try_borrow_mut()?,
+        bump,
+        args.salt(),
+        deposit,
+        args.grace_period(),
+        distribution_hash,
+        *payer_ctx.payer.address(),
+        *accs.payee.address(),
+        *accs.authorized_signer.address(),
+        *channel_ctx.token_ctx.mint.address(),
+        *accs.rent_payer.address(),
+        open_slot,
+    )?;
+
+    let event = Opened {
+        channel: *channel_ctx.channel.address(),
+        open_slot,
+    };
+    let bytes = event.to_bytes_fixed::<{ Opened::WIRE_LEN }>();
+    emit_event(
+        program_id,
+        accs.event_authority,
+        accs.self_program,
+        bytes.as_slice(),
+    )?;
+
+    Ok(())
+}

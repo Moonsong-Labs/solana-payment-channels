@@ -5,6 +5,6 @@
 //! <https://github.com/codama-idl/codama>
 //!
 
-pub(crate) mod payment_channels;
+pub(crate) mod tabs;
 
-pub use self::payment_channels::PaymentChannelsError;
+pub use self::tabs::TabsError;

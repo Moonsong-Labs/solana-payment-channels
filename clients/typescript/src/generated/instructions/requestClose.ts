@@ -32,7 +32,7 @@ import {
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
 import { getU8Decoder, getU8Encoder } from "../../safe-codecs.js";
-import { PAYMENT_CHANNELS_PROGRAM_ADDRESS } from "../programs";
+import { TABS_PROGRAM_ADDRESS } from "../programs";
 
 export const REQUEST_CLOSE_DISCRIMINATOR = 5;
 
@@ -41,7 +41,7 @@ export function getRequestCloseDiscriminatorBytes(): ReadonlyUint8Array {
 }
 
 export type RequestCloseInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountChannel extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -96,14 +96,13 @@ export type RequestCloseInput<
 export function getRequestCloseInstruction<
   TAccountPayer extends string,
   TAccountChannel extends string,
-  TProgramAddress extends Address = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof TABS_PROGRAM_ADDRESS,
 >(
   input: RequestCloseInput<TAccountPayer, TAccountChannel>,
   config?: { programAddress?: TProgramAddress },
 ): RequestCloseInstruction<TProgramAddress, TAccountPayer, TAccountChannel> {
   // Program address.
-  const programAddress =
-    config?.programAddress ?? PAYMENT_CHANNELS_PROGRAM_ADDRESS;
+  const programAddress = config?.programAddress ?? TABS_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -131,7 +130,7 @@ export function getRequestCloseInstruction<
 }
 
 export type ParsedRequestCloseInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;

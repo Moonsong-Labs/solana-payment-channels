@@ -47,4 +47,4 @@ jobs:
         run: cargo install --locked cargo-geiger
       # Geiger exits non-zero on any unsafe; always true here via pinocchio.
       # Keep the report informational rather than gating.
-      - run: cd program/payment_channels && cargo geiger --all-features --output-format GitHubMarkdown || true
+      - run: cd program/tabs && cargo geiger --all-features --output-format GitHubMarkdown || true

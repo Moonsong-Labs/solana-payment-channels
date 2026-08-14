@@ -33,7 +33,7 @@ import {
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
 import { getU8Decoder, getU8Encoder } from "../../safe-codecs.js";
-import { PAYMENT_CHANNELS_PROGRAM_ADDRESS } from "../programs";
+import { TABS_PROGRAM_ADDRESS } from "../programs";
 import {
   getSettleAndSealArgsDecoder,
   getSettleAndSealArgsEncoder,
@@ -48,7 +48,7 @@ export function getSettleAndSealDiscriminatorBytes(): ReadonlyUint8Array {
 }
 
 export type SettleAndSealInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountPayee extends string | AccountMeta<string> = string,
   TAccountChannel extends string | AccountMeta<string> = string,
   TAccountInstructionsSysvar extends string | AccountMeta<string> = string,
@@ -122,7 +122,7 @@ export function getSettleAndSealInstruction<
   TAccountPayee extends string,
   TAccountChannel extends string,
   TAccountInstructionsSysvar extends string,
-  TProgramAddress extends Address = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof TABS_PROGRAM_ADDRESS,
 >(
   input: SettleAndSealInput<
     TAccountPayee,
@@ -137,8 +137,7 @@ export function getSettleAndSealInstruction<
   TAccountInstructionsSysvar
 > {
   // Program address.
-  const programAddress =
-    config?.programAddress ?? PAYMENT_CHANNELS_PROGRAM_ADDRESS;
+  const programAddress = config?.programAddress ?? TABS_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -177,7 +176,7 @@ export function getSettleAndSealInstruction<
 }
 
 export type ParsedSettleAndSealInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;

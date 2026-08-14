@@ -1,6 +1,6 @@
-# payment-channels
+# tabs
 
-> Payment channels make agentic payments practical by escrowing a spending ceiling on-chain and settling actual usage from signed vouchers; this program backs [MPP `session`](https://paymentauth.org/draft-solana-session-00.html) for streaming or repeated payments and [x402 `upto`](https://github.com/x402-foundation/x402/blob/main/specs/schemes/upto/scheme_upto_svm.md) for one metered request.
+> Tabs make agentic payments practical by escrowing a spending ceiling on-chain and settling actual usage from signed vouchers; this program backs [MPP `session`](https://paymentauth.org/draft-solana-session-00.html) for streaming or repeated payments and [x402 `upto`](https://github.com/x402-foundation/x402/blob/main/specs/schemes/upto/scheme_upto_svm.md) for one metered request.
 
 **Status — live on mainnet:** [`CHNLxYvVA28MJP9PrFuDXccuoGXAx7jBacfLEkahyGsX`](https://explorer.solana.com/address/CHNLxYvVA28MJP9PrFuDXccuoGXAx7jBacfLEkahyGsX)
 
@@ -52,7 +52,7 @@ The Ed25519-signed message is exactly 50 bytes:
 | `34..42` | 8 | `cumulative_amount` | `u64`, little-endian |
 | `42..50` | 8 | `expires_at` | Unix timestamp as `i64`, little-endian; `0` disables expiry |
 
-`settle` carries no voucher copy in its own instruction data. The transaction places a canonical single-signature Ed25519 precompile instruction immediately before `settle` (or before voucher-bearing `settle_and_seal`); the program reads the verified 50-byte message through the Instructions sysvar. See the [state-machine voucher contract](docs/001-payment-channel-state-machine.md#voucher) for replay, expiry, and signer checks.
+`settle` carries no voucher copy in its own instruction data. The transaction places a canonical single-signature Ed25519 precompile instruction immediately before `settle` (or before voucher-bearing `settle_and_seal`); the program reads the verified 50-byte message through the Instructions sysvar. See the [state-machine voucher contract](docs/001-tab-state-machine.md#voucher) for replay, expiry, and signer checks.
 
 ## Used by pay.sh
 
@@ -61,7 +61,7 @@ This program is the on-chain settlement layer behind two [pay.sh](https://pay.sh
 - **x402 `upto`** — a single metered call: the operator settles one voucher for the actual amount and refunds the rest.
 - **MPP `session`** — a streamed channel: many cumulative vouchers, settled once when the session idle-closes.
 
-See **[Payment channels](https://pay.sh/docs/building-with-pay/payment-channels/concept)** on pay.sh for the protocol handshakes and when to pick each.
+See **[Tabs](https://pay.sh/docs/building-with-pay/tabs/concept)** on pay.sh for the protocol handshakes and when to pick each.
 
 ## Instructions
 
@@ -86,11 +86,11 @@ just generate-client
 just test-program
 ```
 
-Cluster builds (`just build-mainnet-beta`, `just build-devnet`, …) require that cluster's real `TREASURY_OWNER` in `program/payment_channels/src/constants.rs` and refuse to compile with the placeholder. No production keypair is committed — pass the program-id keypair explicitly when deploying.
+Cluster builds (`just build-mainnet-beta`, `just build-devnet`, …) require that cluster's real `TREASURY_OWNER` in `program/tabs/src/constants.rs` and refuse to compile with the placeholder. No production keypair is committed — pass the program-id keypair explicitly when deploying.
 
 ## Docs & clients
 
-- [State machine](docs/001-payment-channel-state-machine.md)
+- [State machine](docs/001-tab-state-machine.md)
 - [HTTP protocol](docs/002-http-protocol.md)
 - [Instruction reference](docs/003-program-instructions.md)
 - Generated clients: [TypeScript](clients/typescript), [Rust](clients/rust).
@@ -99,7 +99,7 @@ Cluster builds (`just build-mainnet-beta`, `just build-devnet`, …) require tha
 
 MIT. See [LICENSE](LICENSE).
 
-## Future work: payment channel v2
+## Future work: Tabs v2
 
 "v2" is a set of proposed, unimplemented ADRs that keep the version-1 voucher format and the escrow model but cut the per-session and per-channel settlement cost. None is enabled in production; all are planning envelopes, not benchmarks.
 

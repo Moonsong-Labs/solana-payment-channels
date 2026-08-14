@@ -1,5 +1,5 @@
 {
-  "name": "payment-channels-monorepo",
+  "name": "tabs-monorepo",
   "type": "module",
   "private": true,
   "workspaces": [

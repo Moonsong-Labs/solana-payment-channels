@@ -37,7 +37,7 @@ jobs:
       - name: Verify generated clients are up to date
         run: |
           git diff --exit-code -- \
-            program/payment_channels/idl \
+            program/tabs/idl \
             clients/rust/src/generated \
             clients/typescript/src/generated \
             || { echo "::error::generated clients out of date — run 'just generate-client' and commit"; exit 1; }
@@ -46,7 +46,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: program-so
-          path: target/deploy/payment_channels.so
+          path: target/deploy/tabs.so
           retention-days: 1
 
       - name: Upload client dist

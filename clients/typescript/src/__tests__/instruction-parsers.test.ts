@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getDistributeInstructionDataEncoder,
   getRequestCloseInstruction,
-  PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TABS_PROGRAM_ADDRESS,
   parseDistributeInstruction,
   parseRequestCloseInstruction,
 } from '../generated/index.js';
@@ -54,7 +54,7 @@ describe('fixed-shape parsers mirror the on-chain exact account lists', () => {
       role: AccountRole.READONLY,
     }));
     const distribute = {
-      programAddress: PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+      programAddress: TABS_PROGRAM_ADDRESS,
       accounts: metas,
       data: getDistributeInstructionDataEncoder().encode({
         distributeArgs: { recipients: [] },

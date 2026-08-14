@@ -130,7 +130,7 @@ impl anchor_lang::AccountSerialize for Channel {}
 #[cfg(feature = "anchor")]
 impl anchor_lang::Owner for Channel {
     fn owner() -> anchor_lang::solana_program::pubkey::Pubkey {
-        anchor_lang::solana_program::pubkey::Pubkey::from(crate::PAYMENT_CHANNELS_ID.to_bytes())
+        anchor_lang::solana_program::pubkey::Pubkey::from(crate::TABS_ID.to_bytes())
     }
 }
 

@@ -33,7 +33,7 @@ import {
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
 import { getU8Decoder, getU8Encoder } from "../../safe-codecs.js";
-import { PAYMENT_CHANNELS_PROGRAM_ADDRESS } from "../programs";
+import { TABS_PROGRAM_ADDRESS } from "../programs";
 import {
   getTopUpArgsDecoder,
   getTopUpArgsEncoder,
@@ -48,7 +48,7 @@ export function getTopUpDiscriminatorBytes(): ReadonlyUint8Array {
 }
 
 export type TopUpInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountChannel extends string | AccountMeta<string> = string,
   TAccountPayerTokenAccount extends string | AccountMeta<string> = string,
@@ -141,7 +141,7 @@ export function getTopUpInstruction<
   TAccountChannelTokenAccount extends string,
   TAccountMint extends string,
   TAccountTokenProgram extends string,
-  TProgramAddress extends Address = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof TABS_PROGRAM_ADDRESS,
 >(
   input: TopUpInput<
     TAccountPayer,
@@ -162,8 +162,7 @@ export function getTopUpInstruction<
   TAccountTokenProgram
 > {
   // Program address.
-  const programAddress =
-    config?.programAddress ?? PAYMENT_CHANNELS_PROGRAM_ADDRESS;
+  const programAddress = config?.programAddress ?? TABS_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -214,7 +213,7 @@ export function getTopUpInstruction<
 }
 
 export type ParsedTopUpInstruction<
-  TProgram extends string = typeof PAYMENT_CHANNELS_PROGRAM_ADDRESS,
+  TProgram extends string = typeof TABS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;

@@ -37,7 +37,7 @@ impl RequestClose {
         let data = RequestCloseInstructionData::new().try_to_vec().unwrap();
 
         solana_instruction::Instruction {
-            program_id: crate::PAYMENT_CHANNELS_ID,
+            program_id: crate::TABS_ID,
             accounts,
             data,
         }
@@ -166,7 +166,7 @@ impl<'a, 'b> RequestCloseCpi<'a, 'b> {
         let data = RequestCloseInstructionData::new().try_to_vec().unwrap();
 
         let instruction = solana_instruction::Instruction {
-            program_id: crate::PAYMENT_CHANNELS_ID,
+            program_id: crate::TABS_ID,
             accounts,
             data,
         };

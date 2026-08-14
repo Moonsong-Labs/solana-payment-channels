@@ -3,7 +3,7 @@
 **Status:** Candidate — not implemented, and only warranted under a specific
 topology (see [Decision](#decision-when-this-is-worth-building)).
 
-**Parent ADRs:** [ADR-001](./001-payment-channel-state-machine.md),
+**Parent ADRs:** [ADR-001](./001-tab-state-machine.md),
 [ADR-003](./003-program-instructions.md),
 [ADR-004](./004-batch-voucher-settlement.md),
 [ADR-005](./005-channel-rearm.md)

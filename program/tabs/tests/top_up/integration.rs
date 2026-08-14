@@ -1,0 +1,182 @@
+use mollusk_svm::result::ProgramResult;
+use tabs::TabsError;
+use tabs::state::channel::ChannelStatus;
+use solana_program_error::ProgramError;
+use solana_pubkey::Pubkey;
+
+use crate::common::ChannelBuilder;
+
+use super::{DEPOSIT, TopUpRun};
+
+#[test]
+fn zero_amount_rejects() {
+    let payer = Pubkey::new_unique();
+    assert_eq!(
+        TopUpRun::new(
+            payer,
+            ChannelBuilder::new()
+                .status(ChannelStatus::Open)
+                .deposit(DEPOSIT)
+                .payer(payer)
+                .build(),
+            0,
+        )
+        .run(),
+        ProgramResult::Failure(ProgramError::Custom(
+            TabsError::DepositMustBeNonZero as u32
+        )),
+    );
+}
+
+#[test]
+fn unsigned_payer_rejects() {
+    let payer = Pubkey::new_unique();
+    assert_eq!(
+        TopUpRun {
+            is_signer: false,
+            ..TopUpRun::new(
+                payer,
+                ChannelBuilder::new()
+                    .status(ChannelStatus::Open)
+                    .deposit(DEPOSIT)
+                    .payer(payer)
+                    .build(),
+                DEPOSIT,
+            )
+        }
+        .run(),
+        ProgramResult::Failure(ProgramError::Custom(
+            TabsError::MissingRequiredSignature as u32
+        )),
+    );
+}
+
+#[test]
+fn non_open_status_rejects() {
+    let payer = Pubkey::new_unique();
+    assert_eq!(
+        TopUpRun::new(
+            payer,
+            ChannelBuilder::new()
+                .status(ChannelStatus::Sealed)
+                .deposit(DEPOSIT)
+                .payer(payer)
+                .build(),
+            DEPOSIT,
+        )
+        .run(),
+        ProgramResult::Failure(ProgramError::Custom(
+            TabsError::InvalidChannelStatus as u32
+        )),
+    );
+}
+
+#[test]
+fn closing_status_rejects() {
+    let payer = Pubkey::new_unique();
+    assert_eq!(
+        TopUpRun::new(
+            payer,
+            ChannelBuilder::new()
+                .status(ChannelStatus::Closing)
+                .deposit(DEPOSIT)
+                .payer(payer)
+                .build(),
+            DEPOSIT,
+        )
+        .run(),
+        ProgramResult::Failure(ProgramError::Custom(
+            TabsError::InvalidChannelStatus as u32
+        )),
+    );
+}
+
+#[test]
+fn wrong_payer_rejects() {
+    let alice = Pubkey::new_unique(); // channel.payer
+    let bob = Pubkey::new_unique(); // unauthorized caller
+    assert_eq!(
+        TopUpRun::new(
+            bob,
+            ChannelBuilder::new()
+                .status(ChannelStatus::Open)
+                .deposit(DEPOSIT)
+                .payer(alice)
+                .build(),
+            DEPOSIT,
+        )
+        .run(),
+        ProgramResult::Failure(ProgramError::Custom(
+            TabsError::InvalidChannelPayer as u32
+        )),
+    );
+}
+
+#[test]
+fn wrong_mint_rejects() {
+    let payer = Pubkey::new_unique();
+    let stored_mint = Pubkey::new_unique();
+    let wrong_mint = Pubkey::new_unique();
+    assert_eq!(
+        TopUpRun {
+            mint: wrong_mint,
+            ..TopUpRun::new(
+                payer,
+                ChannelBuilder::new()
+                    .status(ChannelStatus::Open)
+                    .deposit(DEPOSIT)
+                    .payer(payer)
+                    .mint(stored_mint)
+                    .build(),
+                DEPOSIT,
+            )
+        }
+        .run(),
+        ProgramResult::Failure(ProgramError::Custom(
+            TabsError::InvalidChannelMint as u32
+        )),
+    );
+}
+
+#[test]
+fn legacy_tombstone_account_rejects() {
+    // 1-byte accounts carrying the reserved `ClosedChannel` discriminator
+    // (= 2) are leftovers of the pre-launch deployment's tombstone close;
+    // the program no longer produces them — a fully closed channel is
+    // deallocated entirely. `Channel::load_mut` length-gates inside
+    // `unsafe load_mut::<Channel>` before any discriminator/version/status
+    // logic runs, so top_up rejects with `InvalidAccountData`.
+    assert_eq!(
+        TopUpRun::new(Pubkey::new_unique(), vec![2u8], 1).run(),
+        ProgramResult::Failure(ProgramError::InvalidAccountData),
+    );
+}
+
+#[test]
+fn unknown_token_program_rejects() {
+    // `validate_mint` runs after the mint-equality check and rejects any
+    // `token_program` other than SPL Token or Token-2022.
+    let payer = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let unknown_token_program = Pubkey::new_unique();
+    assert_eq!(
+        TopUpRun {
+            mint,
+            token_program: unknown_token_program,
+            ..TopUpRun::new(
+                payer,
+                ChannelBuilder::new()
+                    .status(ChannelStatus::Open)
+                    .deposit(DEPOSIT)
+                    .payer(payer)
+                    .mint(mint)
+                    .build(),
+                DEPOSIT,
+            )
+        }
+        .run(),
+        ProgramResult::Failure(ProgramError::Custom(
+            TabsError::InvalidMintTokenProgram as u32
+        )),
+    );
+}

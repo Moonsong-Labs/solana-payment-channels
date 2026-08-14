@@ -50,7 +50,7 @@ impl SettleAndSeal {
         data.append(&mut args);
 
         solana_instruction::Instruction {
-            program_id: crate::PAYMENT_CHANNELS_ID,
+            program_id: crate::TABS_ID,
             accounts,
             data,
         }
@@ -230,7 +230,7 @@ impl<'a, 'b> SettleAndSealCpi<'a, 'b> {
         data.append(&mut args);
 
         let instruction = solana_instruction::Instruction {
-            program_id: crate::PAYMENT_CHANNELS_ID,
+            program_id: crate::TABS_ID,
             accounts,
             data,
         };

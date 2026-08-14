@@ -4,7 +4,7 @@
 // Usage:
 //   bench_diff.mjs <bench-base.md> <bench-pr.md>
 //
-// Reads the markdown tables emitted by `payment_channels`'s bench harness
+// Reads the markdown tables emitted by `tabs`'s bench harness
 // (`tests/benchmark/mod.rs::write_report`) and prints a comparison with
 // columns: Scenario, CUs (main), CUs (this), Delta, Est Cost (Med) [SOL].
 

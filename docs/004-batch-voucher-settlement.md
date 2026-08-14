@@ -2,7 +2,7 @@
 
 **Status:** Proposed future work — not implemented
 
-**Parent ADRs:** [ADR-001](./001-payment-channel-state-machine.md), [ADR-002](./002-http-protocol.md), [ADR-003](./003-program-instructions.md)
+**Parent ADRs:** [ADR-001](./001-tab-state-machine.md), [ADR-002](./002-http-protocol.md), [ADR-003](./003-program-instructions.md)
 
 ## Context
 
@@ -36,7 +36,7 @@ independent payer authorization with a merchant or facilitator signature.
 ## Goals
 
 - Settle many channels sharing one `authorized_signer` with one Ed25519
-  signature and one payment-channel instruction.
+  signature and one tabs-program instruction.
 - Preserve each channel's cumulative watermark, deposit cap, status, expiry,
   signer, and incarnation checks.
 - Bind every signed amount to the exact channel account at the same index.
@@ -155,7 +155,7 @@ Compute the channel commitment as:
 
 ```text
 channels_hash = SHA256(
-    "payment_channels:batch_voucher:v2"
+    "tabs:batch_voucher:v2"
  || program_id
  || count
  || channel_id[0]
@@ -325,7 +325,7 @@ assume:
 - a version-0 transaction;
 - one fee-payer signature;
 - one address lookup table containing the Instructions sysvar and every channel;
-- static payment-channel, Ed25519, and Compute Budget program IDs;
+- static tabs-program, Ed25519, and Compute Budget program IDs;
 - one compute-unit-limit instruction;
 - one Ed25519 instruction; and
 - one `settleBatch` instruction.

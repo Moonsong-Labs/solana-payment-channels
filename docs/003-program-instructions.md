@@ -4,7 +4,7 @@
 
 ## Context
 
-Quick reference for every instruction exposed by the payment-channels program: discriminator, input parameters, accounts, and a one-line purpose. For state machine, transition guards, voucher verification, and splits canonicalization, see [ADR-001](./001-payment-channel-state-machine.md).
+Quick reference for every instruction exposed by the tabs program: discriminator, input parameters, accounts, and a one-line purpose. For state machine, transition guards, voucher verification, and splits canonicalization, see [ADR-001](./001-tab-state-machine.md).
 
 ## Summary
 
@@ -29,9 +29,9 @@ The **Signer** column lists transaction-level signers where applicable; `Ed25519
 
 Payer-signed initializer. Creates the active channel PDA, creates its escrow ATA, transfers `deposit` from the payer token account, stores the exact SHA-256 hash of the distribution preimage, and emits `Opened`. The `authorized_signer` account must be a valid Ed25519 public key, but it does not need to sign `open`. The `payee` account is not curve-checked and may be a program-derived address (PDA) beneficiary.
 
-Both creates are **prefund-tolerant**: lamports already sitting on the not-yet-opened channel PDA (the PDA is allocated with `Allocate` + `Assign` after topping up only the rent shortfall) and a pre-existing canonical escrow ATA (idempotent CPI) are accepted. A third-party prefund therefore cannot block the first `open` at a derived address. Surplus PDA lamports flow to `rent_payer` at full deallocation; the terminal `distribute` from `SEALED` sweeps tokens already on the escrow ATA to treasury through its residual calculation. See [Accounting authority](./001-payment-channel-state-machine.md#accounting-authority).
+Both creates are **prefund-tolerant**: lamports already sitting on the not-yet-opened channel PDA (the PDA is allocated with `Allocate` + `Assign` after topping up only the rent shortfall) and a pre-existing canonical escrow ATA (idempotent CPI) are accepted. A third-party prefund therefore cannot block the first `open` at a derived address. Surplus PDA lamports flow to `rent_payer` at full deallocation; the terminal `distribute` from `SEALED` sweeps tokens already on the escrow ATA to treasury through its residual calculation. See [Accounting authority](./001-tab-state-machine.md#accounting-authority).
 
-> **Mint trust model.** `open` does not reject mints with a live freeze authority (or mint authority). A merchant accepting a channel denominated in mint `M` is implicitly accepting that `M`'s freeze authority can freeze the channel's escrow ATA and wedge `topUp`, `distribute`, and `withdrawPayer` until thawed. This is intentional so that mainstream stablecoins (USDC, USDT, PYUSD, …) remain usable; merchants are expected to vet the mint off-chain. See [ADR-001 → Mint trust model](./001-payment-channel-state-machine.md#mint-trust-model).
+> **Mint trust model.** `open` does not reject mints with a live freeze authority (or mint authority). A merchant accepting a channel denominated in mint `M` is implicitly accepting that `M`'s freeze authority can freeze the channel's escrow ATA and wedge `topUp`, `distribute`, and `withdrawPayer` until thawed. This is intentional so that mainstream stablecoins (USDC, USDT, PYUSD, …) remain usable; merchants are expected to vet the mint off-chain. See [ADR-001 → Mint trust model](./001-tab-state-machine.md#mint-trust-model).
 
 **Args**
 
@@ -226,7 +226,7 @@ Internal self-CPI target for Anchor-compatible events. Event instruction data is
 
 ## Error Codes
 
-`PaymentChannelsError` is surfaced to clients as `ProgramError::Custom(code)`. Codes are grouped by category and each variant maps 1:1 to a numeric value below. The canonical source is `program/payment_channels/src/errors.rs`; the table below lists all variants for client integrators.
+`TabsError` is surfaced to clients as `ProgramError::Custom(code)`. Codes are grouped by category and each variant maps 1:1 to a numeric value below. The canonical source is `program/tabs/src/errors.rs`; the table below lists all variants for client integrators.
 
 ### General channel validation
 

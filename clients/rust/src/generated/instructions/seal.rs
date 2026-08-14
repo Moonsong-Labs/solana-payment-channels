@@ -32,7 +32,7 @@ impl Seal {
         let data = SealInstructionData::new().try_to_vec().unwrap();
 
         solana_instruction::Instruction {
-            program_id: crate::PAYMENT_CHANNELS_ID,
+            program_id: crate::TABS_ID,
             accounts,
             data,
         }
@@ -144,7 +144,7 @@ impl<'a, 'b> SealCpi<'a, 'b> {
         let data = SealInstructionData::new().try_to_vec().unwrap();
 
         let instruction = solana_instruction::Instruction {
-            program_id: crate::PAYMENT_CHANNELS_ID,
+            program_id: crate::TABS_ID,
             accounts,
             data,
         };

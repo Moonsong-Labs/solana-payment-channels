@@ -49,7 +49,7 @@ jobs:
           # the bench run; we don't care about preserving that state.
           git checkout -f "$BASE_REF" --quiet
           just bench
-          cp program/payment_channels/bench_report.md /tmp/bench_base.md
+          cp program/tabs/bench_report.md /tmp/bench_base.md
           git checkout -f "$PR_SHA" --quiet
 
       - name: Bench on PR HEAD
@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           node /tmp/bench_diff.mjs \
             /tmp/bench_base.md \
-            program/payment_channels/bench_report.md \
+            program/tabs/bench_report.md \
             > /tmp/bench_diff.md
 
       - name: Post comment

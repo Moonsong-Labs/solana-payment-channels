@@ -10,7 +10,7 @@
 // upgrade that reshapes its templates breaks `pnpm run generate` instead of
 // shipping permissive clients again. The classification itself is checked by
 // the dynamic_tail_handlers_match_idl_remaining_accounts test in
-// program/payment_channels/tests/codama_visitor_idl.rs.
+// program/tabs/tests/codama_visitor_idl.rs.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
-const IDL_PATH = join(repoRoot, 'program/payment_channels/idl/payment_channels.json');
+const IDL_PATH = join(repoRoot, 'program/tabs/idl/tabs.json');
 const TS_DIR = join(repoRoot, 'clients/typescript/src/generated/instructions');
 const RUST_DIR = join(repoRoot, 'clients/rust/src/generated/instructions');
 

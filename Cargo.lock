@@ -3477,67 +3477,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b867cad97c0791bbd3aaa6472142568c6c9e8f71937e98379f584cfb0cf35bec"
 
 [[package]]
-name = "payment_channels"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "borsh",
- "codama",
- "const-crypto",
- "ctor",
- "litesvm",
- "litesvm-token",
- "mollusk-svm",
- "payment_channels_client",
- "pinocchio",
- "pinocchio-associated-token-account",
- "pinocchio-system",
- "pinocchio-token",
- "pinocchio-token-2022",
- "rstest",
- "serde_json",
- "solana-account",
- "solana-address 2.6.0",
- "solana-address-lookup-table-interface",
- "solana-clock",
- "solana-compute-budget",
- "solana-compute-budget-interface",
- "solana-instruction",
- "solana-instructions-sysvar",
- "solana-keypair",
- "solana-message",
- "solana-program-error",
- "solana-program-pack",
- "solana-pubkey 3.0.0",
- "solana-rent 3.1.0",
- "solana-signer",
- "solana-system-interface 3.2.0",
- "solana-transaction",
- "solana-transaction-error",
- "spl-token-2022-interface",
- "tabled",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "payment_channels_client"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "borsh",
- "num-derive",
- "num-traits",
- "solana-account",
- "solana-account-info",
- "solana-address 2.6.0",
- "solana-client",
- "solana-cpi",
- "solana-instruction",
- "solana-program-error",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "pbkdf2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6997,6 +6936,67 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "tabs"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "borsh",
+ "codama",
+ "const-crypto",
+ "ctor",
+ "litesvm",
+ "litesvm-token",
+ "mollusk-svm",
+ "pinocchio",
+ "pinocchio-associated-token-account",
+ "pinocchio-system",
+ "pinocchio-token",
+ "pinocchio-token-2022",
+ "rstest",
+ "serde_json",
+ "solana-account",
+ "solana-address 2.6.0",
+ "solana-address-lookup-table-interface",
+ "solana-clock",
+ "solana-compute-budget",
+ "solana-compute-budget-interface",
+ "solana-instruction",
+ "solana-instructions-sysvar",
+ "solana-keypair",
+ "solana-message",
+ "solana-program-error",
+ "solana-program-pack",
+ "solana-pubkey 3.0.0",
+ "solana-rent 3.1.0",
+ "solana-signer",
+ "solana-system-interface 3.2.0",
+ "solana-transaction",
+ "solana-transaction-error",
+ "spl-token-2022-interface",
+ "tabled",
+ "tabs_client",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tabs_client"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "borsh",
+ "num-derive",
+ "num-traits",
+ "solana-account",
+ "solana-account-info",
+ "solana-address 2.6.0",
+ "solana-client",
+ "solana-cpi",
+ "solana-instruction",
+ "solana-program-error",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

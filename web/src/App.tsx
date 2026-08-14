@@ -69,8 +69,8 @@ interface SelectKnobProps {
 
 const SECONDS_PER_MONTH = 2_592_000; // 30 days
 const MODE_LABELS: Readonly<Record<ModelMode, string>> = {
-    'channel-v1': 'Payment channel v1',
-    'channel-v2': 'Payment channel v2',
+    'channel-v1': 'Tab v1',
+    'channel-v2': 'Tab v2',
     vanilla: 'Vanilla transfer',
 };
 const SCHEME_LABELS: Readonly<Record<SettlementScheme, string>> = {
@@ -78,7 +78,7 @@ const SCHEME_LABELS: Readonly<Record<SettlementScheme, string>> = {
     none: '',
     x402: 'x402',
 };
-/** Composed label for the selected stack, e.g. "Payment channel v2 · MPP". */
+/** Composed label for the selected stack, e.g. "Tab v2 · MPP". */
 function settlementLabel(mode: ModelMode, scheme: SettlementScheme): string {
     const base = MODE_LABELS[mode];
     return scheme === 'none' ? base : `${base} · ${SCHEME_LABELS[scheme]}`;
@@ -86,8 +86,8 @@ function settlementLabel(mode: ModelMode, scheme: SettlementScheme): string {
 
 const BASE_METHODS: readonly { id: BaseMethod; label: string; sub: string }[] = [
     { id: 'vanilla', label: 'Vanilla transfer', sub: 'one on-chain tx / payment' },
-    { id: 'v1', label: 'Payment channel v1', sub: 'Deployed · persistent OPEN channels' },
-    { id: 'v2', label: 'Payment channel v2', sub: '• Recyclable channels\n• Operated voucher compaction' },
+    { id: 'v1', label: 'Tab v1', sub: 'Deployed · persistent OPEN channels' },
+    { id: 'v2', label: 'Tab v2', sub: '• Recyclable channels\n• Operated voucher compaction' },
 ];
 function baseMethodOf(mode: ModelMode): BaseMethod {
     if (mode === 'vanilla') return 'vanilla';
@@ -393,7 +393,7 @@ export function App() {
                 <div>
                     <p className="eyebrow">
                         <a
-                            href="https://github.com/solana-foundation/payment-channels"
+                            href="https://github.com/solana-foundation/tabs"
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{ color: 'white', textDecoration: 'none' }}
@@ -407,7 +407,7 @@ export function App() {
                             >
                                 <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v 3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
                             </svg>
-                            SOLANA-FOUNDATION/PAYMENT-CHANNELS
+                            SOLANA-FOUNDATION/TABS
                         </a>
                     </p>
                     <h1>
@@ -674,7 +674,7 @@ export function App() {
                             ? settlementClockEnabled
                                 ? `A ${formatCompact(demand.settlementClockSeconds, 2)}s cash window carries ${formatCompact(requestsPerSettlement, 2)} payments/channel. The same channel remains OPEN for ${formatCompact(channelLifeSeconds, 2)}s and carries ${formatCompact(paymentsPerChannel, 2)} payments before one ${formatInteger(costPerLifecycle)}-unit terminal lifecycle; all selected planes amortize to ${formatCompact(costPerLogicalPayment, 2)} units/payment.`
                                 : `Cash sweeps disabled: vouchers accumulate until the ${formatCompact(channelLifeSeconds, 2)}s terminal channel close. The full lifecycle amortizes across ${formatCompact(paymentsPerChannel, 2)} payments/channel.`
-                            : 'Vanilla always sends one token transfer per request; the settlement clock applies only to payment channels.'}
+                            : 'Vanilla always sends one token transfer per request; the settlement clock applies only to tabs.'}
                     </small>
                 </div>
                 <div className="capacity-equation">
@@ -1395,7 +1395,7 @@ export function App() {
                         <p className="section-index">05</p>
                         <h2 id="how-it-works-title">How it works</h2>
                     </div>
-                    <p>Payment channels compress a stream of logical payments into periodic on-chain state changes.</p>
+                    <p>Tabs compress a stream of logical payments into periodic on-chain state changes.</p>
                 </div>
                 <ol className="how-it-works-grid">
                     <li>
@@ -1518,7 +1518,7 @@ export function App() {
             </section>
 
             <div
-                aria-label={`Selected payment channel daily network cost: ${settlementLabel(inputs.mode, inputs.scheme)} ${formatUsd(networkFeeUsdPerSecond * SECONDS_PER_DAY)} per day`}
+                aria-label={`Selected tab daily network cost: ${settlementLabel(inputs.mode, inputs.scheme)} ${formatUsd(networkFeeUsdPerSecond * SECONDS_PER_DAY)} per day`}
                 aria-live="polite"
                 className="opex-sticky"
                 data-horizon={pinnedHorizon}
@@ -1550,7 +1550,7 @@ export function App() {
                             <span>Solana Foundation</span>
                         </div>
                     </div>
-                    <nav aria-label="Payment channel resources" className="site-footer-links">
+                    <nav aria-label="Tab resources" className="site-footer-links">
                         <a href="https://pay.sh" rel="noopener noreferrer" target="_blank">
                             pay.sh <span aria-hidden="true">↗</span>
                         </a>

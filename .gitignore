@@ -4,7 +4,7 @@ dist
 .idea
 .DS_Store
 pnpm-debug.log
-program/payment_channels/idl/*.raw.json
+program/tabs/idl/*.raw.json
 
 # Legacy/local keypair directory; production keypairs should live outside the repo.
 keys/

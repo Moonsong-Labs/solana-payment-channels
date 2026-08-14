@@ -1,4 +1,4 @@
-const IDL_PATH = './program/payment_channels/idl/payment_channels.json';
+const IDL_PATH = './program/tabs/idl/tabs.json';
 
 export default {
   idl: IDL_PATH,

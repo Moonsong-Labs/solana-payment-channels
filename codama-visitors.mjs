@@ -14,7 +14,7 @@ import {
   publicKeyValueNode,
 } from '@codama/nodes';
 
-const IDL_PATH = './program/payment_channels/idl/payment_channels.json';
+const IDL_PATH = './program/tabs/idl/tabs.json';
 const CODAMA_STANDARD_VERSION = '1.6.0';
 const OMIT_EMPTY_ARRAY_KEYS = new Set([
   'byteDeltas',
